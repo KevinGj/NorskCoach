@@ -1,0 +1,304 @@
+Norsk Coach v1 - Product Specification
+Goal
+
+Build a simple web/mobile application that helps an advanced Norwegian learner improve:
+
+Pronunciation
+Rhythm and intonation (prosody)
+Speaking fluency
+Listening comprehension
+
+The target user is already conversational in Norwegian and does not need vocabulary drills, grammar exercises, or beginner lessons.
+
+The primary focus is helping the user sound more natural and comfortable in spoken Norwegian.
+
+Core Concept
+
+A daily 15-minute session consisting of:
+
+Shadowing (listen and imitate)
+Conversation practice
+Storytelling
+Feedback and coaching
+
+The application should feel more like a personal speech coach than a language-learning app.
+
+User Profile
+
+Example target user:
+
+Lived in Norway for many years
+Uses Norwegian in daily life
+Reads Norwegian fluently
+Can write Norwegian reasonably well
+Limited opportunities to speak Norwegian regularly
+Wants better pronunciation and more natural speech
+Wants to improve understanding of fast native speakers
+Design Principles
+Avoid
+Vocabulary flashcards
+Grammar lessons
+Multiple choice exercises
+Duolingo-style gamification
+Childish interfaces
+Emphasize
+Speaking
+Listening
+Repetition
+Natural conversation
+Confidence building
+Norwegian speech melody
+Daily Session Structure
+Exercise 1: Shadowing (5 minutes)
+Goal
+
+Train pronunciation, rhythm, and sentence melody.
+
+Flow
+AI generates or selects a short spoken sentence.
+Native-quality Norwegian voice reads it.
+User listens.
+User repeats.
+Recording is analyzed.
+Feedback is provided.
+Example
+
+AI says:
+
+"Jeg skal på butikken etter jobb."
+
+User repeats.
+
+AI feedback:
+
+Pronunciation: Good
+Rhythm: Slightly English stress pattern
+Suggested improvement:
+Reduce emphasis on "skal"
+Let the sentence flow more naturally
+Metrics
+
+Store:
+
+Pronunciation score
+Rhythm score
+Fluency score
+Exercise 2: Guided Conversation (5 minutes)
+Goal
+
+Practice spontaneous speaking.
+
+Flow
+
+Voice-only conversation.
+
+AI acts as:
+
+Neighbor
+Colleague
+Store employee
+Journalist
+Friend
+Family member
+
+Example:
+
+Hvordan har dagen din vært?
+
+Follow-up questions should be natural.
+
+Conversation should remain entirely in Norwegian.
+
+If the user switches to English:
+
+Encourage return to Norwegian
+Do not switch language
+Exercise 3: Storytelling (3 minutes)
+Goal
+
+Develop longer-form speech.
+
+AI presents a prompt.
+
+Examples:
+
+Fortell om gården din i Nordland.
+Beskriv en fisketur du husker godt.
+Hva liker du best med å bo i Norge?
+Fortell om en utfordring du løste på jobb.
+
+User speaks continuously for 1-3 minutes.
+
+AI records and analyzes.
+
+Exercise 4: Feedback (2 minutes)
+Goal
+
+Provide actionable coaching.
+
+Output:
+
+Strengths
+Good vocabulary
+Natural sentence structure
+Strong confidence
+Improvements
+Long English-style vowels
+Stress pattern on compound words
+Speaking slightly too fast
+One focus area for tomorrow
+
+Example:
+
+Focus on reducing stress on helper verbs such as "skal", "har", and "kan".
+
+Pronunciation Coaching
+
+This is the most important feature.
+
+The application should attempt to identify:
+
+Common English Influence
+
+Examples:
+
+Excessively hard R sounds
+Flat intonation
+Over-emphasis on content words
+English vowel sounds
+Norwegian Sounds
+
+Track performance on:
+
+y
+u
+ø
+å
+kj
+skj
+rs combinations
+
+Not all users struggle with all sounds.
+
+The system should learn over time.
+
+Prosody Analysis (Important)
+
+Beyond pronunciation.
+
+Evaluate:
+
+Rhythm
+
+Does speech sound choppy?
+
+Intonation
+
+Does sentence melody resemble native Norwegian patterns?
+
+Stress Placement
+
+Are important words emphasized naturally?
+
+Speech Flow
+
+Are pauses natural?
+
+This may initially be heuristic rather than linguistically perfect.
+
+Even simple feedback is useful.
+
+Personal Learning Model
+
+The system should build a profile.
+
+Example:
+
+{
+  "pronunciation_issues": [
+    "y sound",
+    "sentence stress"
+  ],
+  "strengths": [
+    "vocabulary",
+    "grammar"
+  ],
+  "common_patterns": [
+    "English intonation",
+    "over-pronounced helper verbs"
+  ]
+}
+
+Future exercises should adapt based on observed weaknesses.
+
+Progress Dashboard
+
+Simple dashboard.
+
+Metrics over time:
+
+Minutes spoken
+Consecutive days practiced
+Pronunciation score
+Rhythm score
+Fluency score
+
+Graphs are sufficient.
+
+Avoid complex analytics.
+
+Technical Architecture (V1)
+Frontend
+Next.js
+TypeScript
+Responsive design
+Mobile-first
+Backend
+Next.js API routes or lightweight backend
+AI
+
+Use OpenAI Realtime API or Voice API.
+
+Capabilities required:
+
+Speech recognition
+Conversation
+Voice output
+Speech analysis
+Storage
+
+PostgreSQL
+
+Tables:
+
+Users
+Sessions
+Exercises
+Feedback
+PronunciationHistory
+V1 Success Criteria
+
+After 30 days of use:
+
+The user should report:
+
+Increased confidence speaking Norwegian
+Improved ability to understand native speakers
+More natural rhythm and intonation
+Less mental translation from English
+
+Success is not measured by vocabulary acquisition.
+
+Success is measured by sounding and feeling more natural in spoken Norwegian.
+
+Future V2 Ideas (Not In Scope)
+Dialect training
+Multiple Norwegian accents
+Mimic a specific speaker
+Detailed phonetic analysis
+Real-time pronunciation correction
+Community speaking challenges
+Import NRK audio for shadowing practice
+AI-generated personalized pronunciation drills
+
+V1 should remain intentionally simple: open app, speak Norwegian for 15 minutes, receive useful feedback, repeat tomorrow.
