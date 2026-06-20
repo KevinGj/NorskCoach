@@ -24,3 +24,11 @@ pnpm-debug.log*
 Thumbs.db
 .vscode
 .idea
+
+# local textbook audio and generated clips
+NorskAudio/
+public/audio/norsk-segments/
+data/audio-segments.json
+data/segment-review.html
+data/transcripts/
+data/tmp-audio/

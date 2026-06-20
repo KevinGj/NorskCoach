@@ -6,10 +6,14 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "segment:audio": "node scripts/segment-audio.mjs",
+    "segment:review": "node scripts/build-segment-review.mjs"
   },
   "dependencies": {
+    "@google-cloud/speech": "^7.4.0",
     "@google-cloud/text-to-speech": "^6.4.1",
+    "ffmpeg-static": "^5.3.0",
     "next": "^15.3.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
