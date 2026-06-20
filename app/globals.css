@@ -204,6 +204,37 @@ h3 {
   margin-bottom: 0;
 }
 
+.voiceControls {
+  align-items: flex-end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.voiceControls label {
+  color: var(--muted);
+  display: grid;
+  font-size: 0.78rem;
+  font-weight: 800;
+  gap: 6px;
+  min-width: 150px;
+  text-transform: uppercase;
+}
+
+.voiceControls select {
+  appearance: none;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 700;
+  min-height: 44px;
+  padding: 10px 34px 10px 12px;
+}
+
 .promptBox,
 .finalPrompt,
 .referenceText {
@@ -559,6 +590,11 @@ textarea:focus {
 
   .practiceHeader {
     display: grid;
+  }
+
+  .voiceControls {
+    display: grid;
+    justify-content: stretch;
   }
 
   .primary,

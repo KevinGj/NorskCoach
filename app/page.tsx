@@ -48,12 +48,27 @@ type Segment = {
   end: number;
 };
 
+type VoiceOption = {
+  name: string;
+  label: string;
+};
+
 declare global {
   interface Window {
     webkitSpeechRecognition?: SpeechRecognitionConstructor;
     SpeechRecognition?: SpeechRecognitionConstructor;
   }
 }
+
+const voices: VoiceOption[] = [
+  { name: "nb-NO-Chirp3-HD-Aoede", label: "Aoede" },
+  { name: "nb-NO-Chirp3-HD-Achernar", label: "Achernar" },
+  { name: "nb-NO-Chirp3-HD-Achird", label: "Achird" },
+  { name: "nb-NO-Chirp3-HD-Charon", label: "Charon" },
+  { name: "nb-NO-Chirp3-HD-Kore", label: "Kore" },
+  { name: "nb-NO-Chirp3-HD-Puck", label: "Puck" },
+  { name: "nb-NO-Chirp3-HD-Zephyr", label: "Zephyr" }
+];
 
 const stages: SessionStage[] = [
   {
@@ -284,8 +299,10 @@ function AudioStudyPanel({
 export default function Home() {
   const [stageIndex, setStageIndex] = useState(0);
   const [selectedSentence, setSelectedSentence] = useState(0);
+  const [selectedVoice, setSelectedVoice] = useState(voices[0].name);
   const [referenceTime, setReferenceTime] = useState(0);
-  const [isReferencePlaying, setIsReferencePlaying] = useState(false);
+  const [isAudioPlaying, setIsAudioPlaying] = useState(false);
+  const [isSpeechLoading, setIsSpeechLoading] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [feedback, setFeedback] = useState<CoachFeedback | null>(null);
   const [profile, setProfile] = useState<LearnerProfile>(emptyProfile);
@@ -293,7 +310,8 @@ export default function Home() {
   const [isListening, setIsListening] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
-  const playbackStartRef = useRef(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioUrlRef = useRef<string | null>(null);
   const playbackOffsetRef = useRef(0);
 
   const stage = stages[stageIndex];
@@ -312,8 +330,10 @@ export default function Home() {
   useEffect(() => {
     const savedProfile = localStorage.getItem("norsk-coach-profile");
     const savedEntries = localStorage.getItem("norsk-coach-entries");
+    const savedVoice = localStorage.getItem("norsk-coach-voice");
     if (savedProfile) setProfile(JSON.parse(savedProfile) as LearnerProfile);
     if (savedEntries) setEntries(JSON.parse(savedEntries) as SessionEntry[]);
+    if (savedVoice && voices.some((voice) => voice.name === savedVoice)) setSelectedVoice(savedVoice);
   }, []);
 
   useEffect(() => {
@@ -325,54 +345,103 @@ export default function Home() {
   }, [entries]);
 
   useEffect(() => {
-    if (!isReferencePlaying) return;
-    const interval = window.setInterval(() => {
-      const elapsed = (performance.now() - playbackStartRef.current) / 1000;
-      const nextTime = playbackOffsetRef.current + elapsed;
-      if (nextTime >= referenceDuration) {
-        setReferenceTime(referenceDuration);
-        setIsReferencePlaying(false);
-        window.speechSynthesis?.cancel();
-      } else {
-        setReferenceTime(nextTime);
-      }
-    }, 50);
-    return () => window.clearInterval(interval);
-  }, [isReferencePlaying]);
+    localStorage.setItem("norsk-coach-voice", selectedVoice);
+  }, [selectedVoice]);
 
-  const speakText = (text: string, rate = 0.92, offset = 0) => {
+  useEffect(() => {
+    return () => {
+      audioRef.current?.pause();
+      if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+    };
+  }, []);
+
+  const stopAudio = () => {
+    audioRef.current?.pause();
+    window.speechSynthesis?.cancel();
+    setIsAudioPlaying(false);
+  };
+
+  const fallbackSpeech = (text: string, rate: number, offset: number, trackReference: boolean) => {
     if (!("speechSynthesis" in window)) return;
-    window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "nb-NO";
     utterance.rate = rate;
-    utterance.onend = () => setIsReferencePlaying(false);
+    utterance.onend = () => setIsAudioPlaying(false);
+    window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utterance);
     playbackOffsetRef.current = offset;
-    playbackStartRef.current = performance.now();
+    setIsAudioPlaying(true);
+
+    if (trackReference) {
+      const startedAt = performance.now();
+      const interval = window.setInterval(() => {
+        if (!window.speechSynthesis.speaking) {
+          window.clearInterval(interval);
+          return;
+        }
+        setReferenceTime(Math.min(referenceDuration, offset + (performance.now() - startedAt) / 1000));
+      }, 50);
+    }
+  };
+
+  const playGoogleSpeech = async (text: string, rate = 0.94, offset = 0, trackReference = false) => {
+    stopAudio();
+    setIsSpeechLoading(true);
+    try {
+      const response = await fetch("/api/speech", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, voice: selectedVoice, speakingRate: rate })
+      });
+
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+
+      const blob = await response.blob();
+      if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+      const url = URL.createObjectURL(blob);
+      audioUrlRef.current = url;
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      playbackOffsetRef.current = offset;
+      audio.onplay = () => setIsAudioPlaying(true);
+      audio.onpause = () => setIsAudioPlaying(false);
+      audio.onended = () => setIsAudioPlaying(false);
+      audio.ontimeupdate = () => {
+        if (trackReference) {
+          setReferenceTime(Math.min(referenceDuration, playbackOffsetRef.current + audio.currentTime));
+        }
+      };
+      await audio.play();
+    } catch (error) {
+      console.warn("Google speech failed, falling back to browser TTS.", error);
+      fallbackSpeech(text, rate, offset, trackReference);
+    } finally {
+      setIsSpeechLoading(false);
+    }
   };
 
   const playReference = () => {
-    if (isReferencePlaying) {
-      window.speechSynthesis?.cancel();
-      setIsReferencePlaying(false);
-      playbackOffsetRef.current = referenceTime;
+    if (isAudioPlaying) {
+      stopAudio();
       return;
     }
     const segment = segmentAtTime(referenceTime);
-    const startIndex = referenceSegments.indexOf(segment);
-    const text = referenceSegments.slice(Math.max(0, startIndex)).map((item) => item.sentence).join(" ");
-    setIsReferencePlaying(true);
-    speakText(text, 0.9, segment.start);
+    const startIndex = Math.max(0, referenceSegments.indexOf(segment));
+    const text = referenceSegments.slice(startIndex).map((item) => item.sentence).join(" ");
+    setSelectedSentence(startIndex);
+    void playGoogleSpeech(text, 0.92, segment.start, true);
   };
 
   const scrubReference = (time: number) => {
     setReferenceTime(time);
     playbackOffsetRef.current = time;
     const segment = segmentAtTime(time);
-    setSelectedSentence(Math.max(0, referenceSegments.indexOf(segment)));
-    if (isReferencePlaying) {
-      speakText(referenceSegments.slice(referenceSegments.indexOf(segment)).map((item) => item.sentence).join(" "), 0.9, segment.start);
+    const startIndex = Math.max(0, referenceSegments.indexOf(segment));
+    setSelectedSentence(startIndex);
+    if (isAudioPlaying) {
+      void playGoogleSpeech(referenceSegments.slice(startIndex).map((item) => item.sentence).join(" "), 0.92, segment.start, true);
     }
   };
 
@@ -381,7 +450,7 @@ export default function Home() {
       playReference();
       return;
     }
-    speakText(prompt, stage.id === "shadowing" ? 0.88 : 0.95);
+    void playGoogleSpeech(prompt, stage.id === "shadowing" ? 0.9 : 0.96);
   };
 
   const toggleListening = () => {
@@ -438,8 +507,7 @@ export default function Home() {
     setStageIndex((current) => current + 1);
     setTranscript("");
     setFeedback(null);
-    window.speechSynthesis?.cancel();
-    setIsReferencePlaying(false);
+    stopAudio();
   };
 
   const finishSession = () => {
@@ -500,9 +568,21 @@ export default function Home() {
               <h2>{stage.title}</h2>
               <p>{stage.goal}</p>
             </div>
-            <button className="secondary" onClick={speak}>
-              {stage.id === "reference" && isReferencePlaying ? "Pause" : "Spill av"}
-            </button>
+            <div className="voiceControls">
+              <label>
+                Norsk stemme
+                <select value={selectedVoice} onChange={(event) => setSelectedVoice(event.target.value)}>
+                  {voices.map((voice) => (
+                    <option key={voice.name} value={voice.name}>
+                      {voice.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button className="secondary" onClick={speak} disabled={isSpeechLoading}>
+                {isSpeechLoading ? "Henter lyd..." : stage.id === "reference" && isAudioPlaying ? "Pause" : "Spill av"}
+              </button>
+            </div>
           </div>
 
           {stage.id === "reference" ? (
@@ -515,7 +595,7 @@ export default function Home() {
                 currentTime={referenceTime}
                 duration={referenceDuration}
                 activeSentence={activeReferenceSegment.sentence}
-                isPlaying={isReferencePlaying}
+                isPlaying={isAudioPlaying}
                 onScrub={scrubReference}
                 onPlayToggle={playReference}
               />
@@ -528,7 +608,7 @@ export default function Home() {
                     onClick={() => {
                       setSelectedSentence(index);
                       setReferenceTime(segment.start);
-                      speakText(segment.sentence, 0.88, segment.start);
+                      void playGoogleSpeech(segment.sentence, 0.88, segment.start, true);
                     }}
                   >
                     <span>{index + 1}</span>

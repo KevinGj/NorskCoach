@@ -51,7 +51,25 @@ npm run start
 
 This version intentionally keeps the coaching engine local and lightweight. It is ready for UI testing and daily-flow validation, but it does not yet connect to a production speech-analysis model, OpenAI Realtime API, Voice API, PostgreSQL, or user accounts.
 
-The core app shape is in place so those services can be added behind the existing `/api/coach` boundary.
+The core app shape is in place so those services can be added behind the existing `/api/coach` boundary. Speech playback now uses Google Cloud Text-to-Speech through `/api/speech`, with browser speech synthesis as a fallback.
+
+## Google Text-to-Speech
+
+For local development, install the Google Cloud CLI and create Application Default Credentials:
+
+```bash
+gcloud init
+gcloud auth application-default login
+gcloud services enable texttospeech.googleapis.com
+```
+
+For Netlify, create a Google Cloud service account with access to Cloud Text-to-Speech and store the JSON key as an environment variable:
+
+```text
+GOOGLE_SERVICE_ACCOUNT_JSON
+```
+
+The app defaults to Norwegian Bokmål Chirp3 HD voice `nb-NO-Chirp3-HD-Aoede` and includes a small voice selector for auditioning other Norwegian voices.
 
 ## Project Structure
 
