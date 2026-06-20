@@ -205,14 +205,16 @@ h3 {
 }
 
 .promptBox,
-.finalPrompt {
+.finalPrompt,
+.referenceText {
   background: #f2eee4;
   border-radius: 8px;
   margin: 28px 0 18px;
   padding: 22px;
 }
 
-.promptBox span {
+.promptBox span,
+.referenceText span {
   color: var(--muted);
   display: block;
   font-size: 0.8rem;
@@ -224,6 +226,162 @@ h3 {
   font-weight: 800;
   line-height: 1.16;
   margin-bottom: 0;
+}
+
+.referenceText p {
+  font-size: 1.08rem;
+  line-height: 1.7;
+  margin-bottom: 0;
+}
+
+.audioStudy {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin: 18px 0;
+  padding: 16px;
+}
+
+.audioStudyHeader {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.audioStudyHeader h3,
+.audioStudyHeader p {
+  margin-bottom: 0;
+}
+
+.linkedTimeline {
+  background: #111814;
+  border-radius: 8px;
+  cursor: ew-resize;
+  overflow: hidden;
+  position: relative;
+  user-select: none;
+}
+
+.playhead {
+  background: #ffffff;
+  bottom: 0;
+  box-shadow: 0 0 0 1px rgba(24, 32, 28, 0.6), 0 0 18px rgba(255, 255, 255, 0.65);
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  width: 2px;
+  z-index: 4;
+}
+
+.waveform {
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+  display: flex;
+  gap: 2px;
+  height: 92px;
+  padding: 12px;
+}
+
+.waveform span {
+  background: #bfe8d7;
+  border-radius: 999px;
+  flex: 1;
+  min-width: 2px;
+  opacity: 0.9;
+}
+
+.spectrogram {
+  display: grid;
+  grid-template-columns: repeat(72, 1fr);
+  height: 190px;
+  padding: 10px 12px;
+  position: relative;
+}
+
+.spectralColumn {
+  display: grid;
+  grid-template-rows: repeat(24, 1fr);
+}
+
+.spectralColumn span {
+  background: rgba(39, 57, 49, 0.42);
+  margin: 0.5px;
+}
+
+.spectralColumn .hot {
+  background: linear-gradient(180deg, #fff4ad 0%, #e98b48 55%, #7cc6a0 100%);
+  box-shadow: 0 0 5px rgba(255, 244, 173, 0.32);
+}
+
+.pitchTrack {
+  inset: 10px 12px;
+  pointer-events: none;
+  position: absolute;
+  z-index: 3;
+}
+
+.pitchTrack polyline {
+  fill: none;
+  stroke: #f7f2df;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+  vector-effect: non-scaling-stroke;
+}
+
+.timeReadout {
+  color: var(--muted);
+  display: flex;
+  font-size: 0.82rem;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+
+.activeSentence {
+  border-left: 3px solid var(--accent);
+  color: var(--ink);
+  line-height: 1.5;
+  margin: 12px 0 0;
+  padding-left: 12px;
+}
+
+.sentencePractice {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.sentence {
+  align-items: start;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 28px minmax(0, 1fr);
+  line-height: 1.45;
+  padding: 12px;
+  text-align: left;
+}
+
+.sentence.active {
+  background: var(--soft);
+  border-color: var(--accent);
+}
+
+.sentence span {
+  align-items: center;
+  background: var(--accent);
+  border-radius: 999px;
+  color: white;
+  display: inline-flex;
+  font-size: 0.78rem;
+  font-weight: 800;
+  height: 24px;
+  justify-content: center;
+  width: 24px;
 }
 
 .recorder,
@@ -370,7 +528,7 @@ textarea:focus {
   }
 
   .timeline {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
   .step {
@@ -392,6 +550,11 @@ textarea:focus {
   .feedbackGrid,
   .stats {
     grid-template-columns: 1fr;
+  }
+
+  .audioStudyHeader {
+    align-items: stretch;
+    display: grid;
   }
 
   .practiceHeader {
