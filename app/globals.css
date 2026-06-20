@@ -569,7 +569,9 @@ h1 em {
   gap: 8px;
 }
 
-.playControls select {
+.playControls select,
+.segmentLibrary select,
+.segmentLibrary input {
   appearance: none;
   background: #0f1b16;
   border: 1px solid #263c33;
@@ -577,6 +579,79 @@ h1 em {
   color: var(--ink);
   min-height: 44px;
   padding: 0 34px 0 14px;
+}
+
+.libraryCount {
+  align-items: center;
+  border: 1px solid #263c33;
+  border-radius: 999px;
+  color: var(--muted);
+  display: inline-flex;
+  font-family: "Courier New", monospace;
+  font-size: 0.8rem;
+  min-height: 36px;
+  padding: 0 12px;
+  text-transform: uppercase;
+}
+
+.segmentLibrary {
+  background: #08130f;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.libraryFilters {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(160px, 0.8fr) minmax(180px, 1fr);
+  margin-bottom: 12px;
+}
+
+.libraryFilters label {
+  color: var(--accent);
+  display: grid;
+  font-family: "Courier New", monospace;
+  font-size: 0.72rem;
+  gap: 7px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.segmentList {
+  display: grid;
+  gap: 8px;
+  max-height: 320px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.librarySegment {
+  background: #0d1914;
+  border: 1px solid #1b3028;
+  border-radius: 10px;
+  color: var(--soft);
+  display: grid;
+  gap: 5px;
+  padding: 11px 13px;
+  text-align: left;
+}
+
+.librarySegment.active {
+  background: #0b2a1f;
+  border-color: var(--accent-2);
+  color: white;
+}
+
+.librarySegment span {
+  color: var(--muted);
+  font-family: "Courier New", monospace;
+  font-size: 0.72rem;
+}
+
+.librarySegment strong {
+  font-size: 0.9rem;
+  line-height: 1.35;
 }
 
 .referenceText {
@@ -782,9 +857,11 @@ h1 em {
 
   .sectionHead,
   .playControls,
-  .analysisActions {
+  .analysisActions,
+  .libraryFilters {
     align-items: stretch;
     display: grid;
+    grid-template-columns: 1fr;
   }
 
   .bottomBar {

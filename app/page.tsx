@@ -47,6 +47,17 @@ type Segment = {
   end: number;
 };
 
+type AudioSegment = {
+  id: string;
+  source: string;
+  audio: string;
+  start: number;
+  end: number;
+  duration: number;
+  utteranceCount: number;
+  text: string;
+};
+
 type VoiceOption = {
   name: string;
   label: string;
@@ -82,7 +93,16 @@ const stages: SessionStage[] = [
 const referenceParagraph =
   "Når jeg går ned mot havna tidlig om morgenen, merker jeg ofte hvordan byen våkner før menneskene gjør det. Det ligger et svakt lys over vannet, og lyden av en buss som bremser ved torget blander seg med måkeskrik og lave stemmer fra folk som skal på jobb. Jeg prøver å gå litt saktere akkurat der, fordi rytmen i stedet gjør noe med tankene mine. Først kommer de korte stegene over brosteinen, så en pause ved krysset, og deretter den lange, rolige bevegelsen langs kaia. Hvis været skifter, slik det ofte gjør her, må man nesten smile av hvor fort samtalen forandrer seg. Noen sier at regnet er tungt, andre sier at det bare renser lufta. For meg er det nettopp denne blandingen av praktisk hverdag og stille oppmerksomhet som gjør norsk språk så levende.";
 
-const referenceSentences = referenceParagraph.match(/[^.!?]+[.!?]/g) ?? [referenceParagraph];
+const fallbackAudioSegment: AudioSegment = {
+  id: "sample-reference",
+  source: "Sample reference",
+  audio: "",
+  start: 0,
+  end: 18,
+  duration: 18,
+  utteranceCount: 1,
+  text: referenceParagraph
+};
 
 const shadowingLines = [
   "Jeg skal på butikken etter jobb.",
@@ -152,11 +172,18 @@ function makeSegments(sentences: string[]): Segment[] {
   });
 }
 
-const referenceSegments = makeSegments(referenceSentences);
-const referenceDuration = Math.max(...referenceSegments.map((segment) => segment.end));
-
-function segmentAtTime(time: number) {
-  return referenceSegments.find((segment) => time >= segment.start && time <= segment.end) ?? referenceSegments[0];
+function makeSegmentsForAudio(segment: AudioSegment): Segment[] {
+  const sentenceTexts = segment.text.match(/[^.!?]+[.!?]/g)?.map((sentence) => sentence.trim()) ?? [];
+  if (sentenceTexts.length < 2) {
+    return [{ sentence: segment.text, start: 0, end: segment.duration }];
+  }
+  const timed = makeSegments(sentenceTexts);
+  const timedDuration = Math.max(...timed.map((sentence) => sentence.end));
+  return timed.map((sentence) => ({
+    ...sentence,
+    start: (sentence.start / timedDuration) * segment.duration,
+    end: (sentence.end / timedDuration) * segment.duration
+  }));
 }
 
 function makeNativePitch(sentenceIndex: number, count = 72): PitchPoint[] {
@@ -382,6 +409,10 @@ function AudioStudyPanel({
 export default function Home() {
   const [stageIndex, setStageIndex] = useState(0);
   const [selectedSentence, setSelectedSentence] = useState(0);
+  const [audioSegments, setAudioSegments] = useState<AudioSegment[]>([]);
+  const [selectedAudioSegmentId, setSelectedAudioSegmentId] = useState(fallbackAudioSegment.id);
+  const [trackFilter, setTrackFilter] = useState("all");
+  const [segmentQuery, setSegmentQuery] = useState("");
   const [selectedVoice, setSelectedVoice] = useState(voices[0].name);
   const [referenceTime, setReferenceTime] = useState(0);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
@@ -403,16 +434,34 @@ export default function Home() {
   const playbackOffsetRef = useRef(0);
 
   const stage = stages[stageIndex];
-  const selectedSegment = referenceSegments[selectedSentence] ?? referenceSegments[0];
+  const librarySegments = audioSegments.length ? audioSegments : [fallbackAudioSegment];
+  const trackOptions = Array.from(new Set(librarySegments.map((segment) => segment.source)));
+  const filteredLibrarySegments = librarySegments.filter((segment) => {
+    const matchesTrack = trackFilter === "all" || segment.source === trackFilter;
+    const query = segmentQuery.trim().toLowerCase();
+    const matchesQuery =
+      !query ||
+      segment.id.toLowerCase().includes(query) ||
+      segment.source.toLowerCase().includes(query) ||
+      segment.text.toLowerCase().includes(query);
+    return matchesTrack && matchesQuery;
+  });
+  const selectedAudioSegment =
+    librarySegments.find((segment) => segment.id === selectedAudioSegmentId) ?? librarySegments[0] ?? fallbackAudioSegment;
+  const activeReferenceSegments = makeSegmentsForAudio(selectedAudioSegment);
+  const activeReferenceDuration = selectedAudioSegment.duration;
+  const selectedSegment = activeReferenceSegments[selectedSentence] ?? activeReferenceSegments[0];
   const selectedSentenceDuration = selectedSegment.end - selectedSegment.start;
   const selectedSentenceTime = Math.min(selectedSentenceDuration, Math.max(0, referenceTime - selectedSegment.start));
+  const segmentAtReferenceTime = (time: number) =>
+    activeReferenceSegments.find((segment) => time >= segment.start && time <= segment.end) ?? activeReferenceSegments[0];
   const prompt = useMemo(() => {
-    if (stage.id === "reference") return referenceSegments[selectedSentence]?.sentence ?? referenceParagraph;
+    if (stage.id === "reference") return selectedAudioSegment.text;
     if (stage.id === "shadowing") return shadowingLines[entries.length % shadowingLines.length];
     if (stage.id === "conversation") return conversationPrompts[entries.length % conversationPrompts.length];
     if (stage.id === "storytelling") return storytellingPrompts[entries.length % storytellingPrompts.length];
     return feedback?.focus ?? "Fullfør økten for å få coaching.";
-  }, [entries.length, feedback?.focus, selectedSentence, stage.id]);
+  }, [entries.length, feedback?.focus, selectedAudioSegment.text, stage.id]);
   const averages = averageScores(entries);
   const totalMinutes = entries.reduce((sum, entry) => sum + entry.minutes, 0);
   const activeScores = feedback?.scores ?? averages;
@@ -421,9 +470,26 @@ export default function Home() {
     const savedProfile = localStorage.getItem("norsk-coach-profile");
     const savedEntries = localStorage.getItem("norsk-coach-entries");
     const savedVoice = localStorage.getItem("norsk-coach-voice");
+    const savedSegment = localStorage.getItem("norsk-coach-segment");
     if (savedProfile) setProfile(JSON.parse(savedProfile) as LearnerProfile);
     if (savedEntries) setEntries(JSON.parse(savedEntries) as SessionEntry[]);
     if (savedVoice && voices.some((voice) => voice.name === savedVoice)) setSelectedVoice(savedVoice);
+    if (savedSegment) setSelectedAudioSegmentId(savedSegment);
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/segments")
+      .then((response) => response.json())
+      .then((segments: AudioSegment[]) => {
+        if (!segments.length) return;
+        setAudioSegments(segments);
+        setSelectedAudioSegmentId((current) =>
+          current === fallbackAudioSegment.id || !segments.some((segment) => segment.id === current)
+            ? segments[0].id
+            : current
+        );
+      })
+      .catch(() => setAudioSegments([]));
   }, []);
 
   useEffect(() => {
@@ -437,6 +503,18 @@ export default function Home() {
   useEffect(() => {
     localStorage.setItem("norsk-coach-voice", selectedVoice);
   }, [selectedVoice]);
+
+  useEffect(() => {
+    localStorage.setItem("norsk-coach-segment", selectedAudioSegmentId);
+  }, [selectedAudioSegmentId]);
+
+  useEffect(() => {
+    setSelectedSentence(0);
+    setReferenceTime(0);
+    setStudentPitch([]);
+    stopAudio();
+    stopStudentPitch();
+  }, [selectedAudioSegmentId]);
 
   useEffect(() => {
     return () => {
@@ -519,7 +597,7 @@ export default function Home() {
           window.clearInterval(interval);
           return;
         }
-        setReferenceTime(Math.min(referenceDuration, offset + (performance.now() - startedAt) / 1000));
+        setReferenceTime(Math.min(activeReferenceDuration, offset + (performance.now() - startedAt) / 1000));
       }, 50);
     }
   };
@@ -548,16 +626,46 @@ export default function Home() {
       audio.onended = () => setIsAudioPlaying(false);
       audio.ontimeupdate = () => {
         if (trackReference) {
-          const nextTime = Math.min(referenceDuration, playbackOffsetRef.current + audio.currentTime);
+          const nextTime = Math.min(activeReferenceDuration, playbackOffsetRef.current + audio.currentTime);
           setReferenceTime(nextTime);
-          const segment = segmentAtTime(nextTime);
-          setSelectedSentence(Math.max(0, referenceSegments.indexOf(segment)));
+          const segment = segmentAtReferenceTime(nextTime);
+          setSelectedSentence(Math.max(0, activeReferenceSegments.indexOf(segment)));
         }
       };
       await audio.play();
     } catch (error) {
       console.warn("Google speech failed, falling back to browser TTS.", error);
       fallbackSpeech(text, rate, offset, trackReference);
+    } finally {
+      setIsSpeechLoading(false);
+    }
+  };
+
+  const playReferenceAudio = async (url: string, offset = 0, trackReference = true) => {
+    if (!url) {
+      fallbackSpeech(selectedAudioSegment.text, 0.92, offset, trackReference);
+      return;
+    }
+
+    stopAudio();
+    setIsSpeechLoading(true);
+    try {
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      playbackOffsetRef.current = offset;
+      audio.currentTime = offset;
+      audio.onplay = () => setIsAudioPlaying(true);
+      audio.onpause = () => setIsAudioPlaying(false);
+      audio.onended = () => setIsAudioPlaying(false);
+      audio.ontimeupdate = () => {
+        if (trackReference) {
+          const nextTime = Math.min(activeReferenceDuration, audio.currentTime);
+          setReferenceTime(nextTime);
+          const segment = segmentAtReferenceTime(nextTime);
+          setSelectedSentence(Math.max(0, activeReferenceSegments.indexOf(segment)));
+        }
+      };
+      await audio.play();
     } finally {
       setIsSpeechLoading(false);
     }
@@ -570,7 +678,7 @@ export default function Home() {
     }
     setSelectedSentence(0);
     setReferenceTime(0);
-    void playGoogleSpeech(referenceParagraph, 0.92, 0, true);
+    void playReferenceAudio(selectedAudioSegment.audio, 0, true);
   };
 
   const playSelectedSentence = () => {
@@ -580,7 +688,7 @@ export default function Home() {
     }
     setReferenceTime(selectedSegment.start);
     setStudentPitch([]);
-    void playGoogleSpeech(selectedSegment.sentence, 0.9, selectedSegment.start, true);
+    void playReferenceAudio(selectedAudioSegment.audio, selectedSegment.start, true);
   };
 
   const scrubReference = (time: number) => {
@@ -588,7 +696,7 @@ export default function Home() {
     setReferenceTime(globalTime);
     playbackOffsetRef.current = globalTime;
     if (isAudioPlaying) {
-      void playGoogleSpeech(selectedSegment.sentence, 0.9, selectedSegment.start, true);
+      void playReferenceAudio(selectedAudioSegment.audio, globalTime, true);
     }
   };
 
@@ -639,7 +747,7 @@ export default function Home() {
       body: JSON.stringify({
         type: stage.id === "reference" ? "shadowing" : stage.id,
         transcript,
-        prompt: stage.id === "reference" ? referenceParagraph : prompt,
+        prompt: stage.id === "reference" ? selectedAudioSegment.text : prompt,
         profile
       })
     });
@@ -748,16 +856,20 @@ export default function Home() {
 
           <aside className="referenceColumn">
             <div className="playControls">
-              <label>
-                Norsk stemme
-                <select value={selectedVoice} onChange={(event) => setSelectedVoice(event.target.value)}>
-                  {voices.map((voice) => (
-                    <option key={voice.name} value={voice.name}>
-                      {voice.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {stage.id === "reference" ? (
+                <span className="libraryCount">{filteredLibrarySegments.length} segmenter</span>
+              ) : (
+                <label>
+                  Norsk stemme
+                  <select value={selectedVoice} onChange={(event) => setSelectedVoice(event.target.value)}>
+                    {voices.map((voice) => (
+                      <option key={voice.name} value={voice.name}>
+                        {voice.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <button className="playButton" onClick={speak} disabled={isSpeechLoading}>
                 {isSpeechLoading ? "Henter lyd..." : isAudioPlaying ? "Pause" : "▶ Spill av"}
               </button>
@@ -765,10 +877,45 @@ export default function Home() {
 
             {stage.id === "reference" ? (
               <>
+                <div className="segmentLibrary">
+                  <div className="libraryFilters">
+                    <label>
+                      Spor
+                      <select value={trackFilter} onChange={(event) => setTrackFilter(event.target.value)}>
+                        <option value="all">Alle spor</option>
+                        {trackOptions.map((track) => (
+                          <option key={track} value={track}>
+                            {track.replace(".mp3", "")}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Søk
+                      <input
+                        value={segmentQuery}
+                        onChange={(event) => setSegmentQuery(event.target.value)}
+                        placeholder="Søk i tekst eller spor"
+                      />
+                    </label>
+                  </div>
+                  <div className="segmentList">
+                    {filteredLibrarySegments.slice(0, 60).map((segment) => (
+                      <button
+                        className={segment.id === selectedAudioSegment.id ? "librarySegment active" : "librarySegment"}
+                        key={segment.id}
+                        onClick={() => setSelectedAudioSegmentId(segment.id)}
+                      >
+                        <span>{segment.source.replace(".mp3", "")} · {segment.duration.toFixed(1)}s</span>
+                        <strong>{truncateSentence(segment.text)}</strong>
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="referenceText">
-                  <p className="microLabel">Referansetekst</p>
+                  <p className="microLabel">Referansetekst · {selectedAudioSegment.id}</p>
                   <p>
-                    {referenceSegments.map((segment, index) => (
+                    {activeReferenceSegments.map((segment, index) => (
                       <span className={index === selectedSentence ? "highlightSentence" : ""} key={segment.sentence}>
                         {segment.sentence}{" "}
                       </span>
@@ -776,20 +923,20 @@ export default function Home() {
                   </p>
                 </div>
                 <div className="sentencePractice">
-                  <h3>Øv setning for setning</h3>
-                  {referenceSegments.map((segment, index) => (
+                  <h3>{activeReferenceSegments.length > 1 ? "Øv setning for setning" : "Øv valgt segment"}</h3>
+                  {activeReferenceSegments.map((segment, index) => (
                     <button
                       className={index === selectedSentence ? "sentence active" : "sentence"}
                       key={segment.sentence}
                       onClick={() => {
                         stopAudio();
                         stopStudentPitch();
-                        setSelectedSentence(index);
-                        setReferenceTime(segment.start);
-                        setStudentPitch([]);
-                        void playGoogleSpeech(segment.sentence, 0.88, segment.start, true);
-                      }}
-                    >
+                      setSelectedSentence(index);
+                      setReferenceTime(segment.start);
+                      setStudentPitch([]);
+                      void playReferenceAudio(selectedAudioSegment.audio, segment.start, true);
+                    }}
+                  >
                       <span>{index + 1}</span>
                       {truncateSentence(segment.sentence)}
                     </button>
