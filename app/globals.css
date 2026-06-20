@@ -379,11 +379,28 @@ h1 em {
   position: relative;
 }
 
+.varianceZone {
+  bottom: 0;
+  opacity: 0.22;
+  position: absolute;
+  top: 0;
+  z-index: 1;
+}
+
+.varianceZone.yellow {
+  background: var(--warn);
+}
+
+.varianceZone.red {
+  background: #ff6272;
+}
+
 .pitchOverlay svg {
   height: 100%;
   inset: 0;
   position: absolute;
   width: 100%;
+  z-index: 2;
 }
 
 .pitchOverlay polyline {
@@ -495,7 +512,90 @@ h1 em {
 }
 
 .activeSentence strong {
+  display: flex;
+  flex-wrap: wrap;
   font-size: 1.02rem;
+  gap: 5px;
+}
+
+.wordMark {
+  background: transparent;
+  border-radius: 5px;
+  color: inherit;
+  padding: 1px 3px;
+}
+
+.wordMark.yellow {
+  background: rgba(255, 209, 90, 0.18);
+  color: #ffe7a0;
+}
+
+.wordMark.red {
+  background: rgba(255, 98, 114, 0.2);
+  color: #ff9ca7;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
+.focusScore {
+  align-items: start;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  display: grid;
+  gap: 20px;
+  grid-template-columns: minmax(170px, 0.45fr) minmax(0, 1fr);
+  margin-top: 20px;
+  padding: 22px;
+}
+
+.focusScore.yellow {
+  border-color: rgba(255, 209, 90, 0.45);
+}
+
+.focusScore.red {
+  border-color: rgba(255, 98, 114, 0.55);
+}
+
+.focusScore h3 {
+  font-size: 1.4rem;
+  margin-bottom: 0;
+}
+
+.focusScore ul {
+  display: grid;
+  gap: 9px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.focusScore li {
+  align-items: center;
+  color: var(--soft);
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 10px minmax(0, 1fr);
+  line-height: 1.45;
+}
+
+.focusScore li span {
+  border-radius: 999px;
+  height: 9px;
+  width: 9px;
+}
+
+.focusScore .good {
+  background: var(--accent);
+}
+
+.focusScore .yellow {
+  background: var(--warn);
+}
+
+.focusScore .red {
+  background: #ff6272;
 }
 
 .vowelChart {
@@ -505,6 +605,14 @@ h1 em {
   grid-template-columns: minmax(0, 1fr) 260px;
   margin-top: 22px;
   padding: 28px;
+}
+
+.vowelChart.yellow {
+  border-color: rgba(255, 209, 90, 0.48);
+}
+
+.vowelChart.red {
+  border-color: rgba(255, 98, 114, 0.58);
 }
 
 .vowelChart h3 {
@@ -557,6 +665,14 @@ h1 em {
   transform: translate(-50%, -50%);
   width: 10px;
   z-index: 3;
+}
+
+.vowelChart.good .vowelDot {
+  background: var(--accent);
+}
+
+.vowelChart.yellow .vowelDot {
+  background: var(--warn);
 }
 
 .referenceColumn {
@@ -842,6 +958,7 @@ h1 em {
   .profileGrid,
   .feedbackGrid,
   .bottomBar,
+  .focusScore,
   .vowelChart {
     grid-template-columns: 1fr;
   }

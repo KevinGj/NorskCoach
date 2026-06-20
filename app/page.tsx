@@ -65,6 +65,19 @@ type VoiceOption = {
 
 type PitchPoint = number | null;
 
+type Severity = "good" | "yellow" | "red";
+
+type WordScore = {
+  word: string;
+  severity: Severity;
+};
+
+type VarianceZone = {
+  start: number;
+  width: number;
+  severity: Exclude<Severity, "good">;
+};
+
 declare global {
   interface Window {
     webkitSpeechRecognition?: SpeechRecognitionConstructor;
@@ -241,6 +254,101 @@ function normalizePitchToLane(pitch: number | null, samples: number[]) {
   return Math.max(18, Math.min(82, 82 - ((pitch - min) / range) * 64));
 }
 
+function normalizeToken(value: string) {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9æøå]/g, "");
+}
+
+function scoreTranscriptWords(reference: string, transcript: string): WordScore[] {
+  if (!transcript.trim()) {
+    return reference.split(/\s+/).filter(Boolean).map((word) => ({ word, severity: "good" }));
+  }
+
+  const spoken = transcript
+    .split(/\s+/)
+    .map(normalizeToken)
+    .filter(Boolean);
+  const spokenSet = new Set(spoken);
+  let cursor = 0;
+
+  return reference.split(/\s+/).filter(Boolean).map((word) => {
+    const token = normalizeToken(word);
+    const orderedIndex = spoken.indexOf(token, cursor);
+    if (!token || orderedIndex >= cursor) {
+      if (orderedIndex >= cursor) cursor = orderedIndex + 1;
+      return { word, severity: "good" };
+    }
+    if (spokenSet.has(token)) return { word, severity: "yellow" };
+    return { word, severity: "red" };
+  });
+}
+
+function buildVarianceZones(nativePitch: PitchPoint[], studentPitch: PitchPoint[]): VarianceZone[] {
+  if (!studentPitch.length) return [];
+
+  const severities = nativePitch.map((nativePoint, index) => {
+    const studentIndex = Math.round((index / Math.max(1, nativePitch.length - 1)) * Math.max(0, studentPitch.length - 1));
+    const studentPoint = studentPitch[studentIndex];
+    if (nativePoint === null || studentPoint === null || studentPoint === undefined) return "good" as Severity;
+    const variance = Math.abs(nativePoint - studentPoint);
+    if (variance > 28) return "red";
+    if (variance > 16) return "yellow";
+    return "good";
+  });
+
+  const zones: VarianceZone[] = [];
+  let zoneStart = -1;
+  let zoneSeverity: VarianceZone["severity"] | null = null;
+
+  severities.forEach((severity, index) => {
+    if (severity === "good") {
+      if (zoneSeverity && zoneStart >= 0) {
+        zones.push({
+          start: (zoneStart / severities.length) * 100,
+          width: ((index - zoneStart) / severities.length) * 100,
+          severity: zoneSeverity
+        });
+      }
+      zoneStart = -1;
+      zoneSeverity = null;
+      return;
+    }
+
+    if (zoneSeverity === severity) return;
+    if (zoneSeverity && zoneStart >= 0) {
+      zones.push({
+        start: (zoneStart / severities.length) * 100,
+        width: ((index - zoneStart) / severities.length) * 100,
+        severity: zoneSeverity
+      });
+    }
+    zoneStart = index;
+    zoneSeverity = severity;
+  });
+
+  if (zoneSeverity && zoneStart >= 0) {
+    zones.push({
+      start: (zoneStart / severities.length) * 100,
+      width: ((severities.length - zoneStart) / severities.length) * 100,
+      severity: zoneSeverity
+    });
+  }
+
+  return zones.filter((zone) => zone.width >= 3);
+}
+
+function summarizeSeverity(words: WordScore[], zones: VarianceZone[], vowelSeverity: Severity) {
+  const missingWords = words.filter((word) => word.severity === "red").length;
+  const weakWords = words.filter((word) => word.severity === "yellow").length;
+  const redZones = zones.filter((zone) => zone.severity === "red").length;
+  if (missingWords || redZones || vowelSeverity === "red") return "red";
+  if (weakWords || zones.length || vowelSeverity === "yellow") return "yellow";
+  return "good";
+}
+
 function truncateSentence(sentence: string) {
   return sentence.length > 45 ? `${sentence.slice(0, 45).trim()}...` : sentence;
 }
@@ -272,6 +380,7 @@ function AudioStudyPanel({
   currentTime,
   duration,
   activeSentence,
+  transcript,
   sentenceIndex,
   studentPitch,
   isStudentListening,
@@ -283,6 +392,7 @@ function AudioStudyPanel({
   currentTime: number;
   duration: number;
   activeSentence: string;
+  transcript: string;
   sentenceIndex: number;
   studentPitch: PitchPoint[];
   isStudentListening: boolean;
@@ -308,12 +418,20 @@ function AudioStudyPanel({
       return formant && Math.sin(time * Math.PI * 18) > -0.75;
     })
   );
-  const nativePolyline = pointsToPolyline(makeNativePitch(sentenceIndex));
+  const nativePitch = makeNativePitch(sentenceIndex);
+  const nativePolyline = pointsToPolyline(nativePitch);
   const studentPolyline = pointsToPolyline(studentPitch);
   const voicedStudent = studentPitch.filter((point): point is number => point !== null);
   const latestStudent = voicedStudent.at(-1);
   const vowelX = latestStudent ? Math.max(15, Math.min(85, 100 - latestStudent)) : 55;
   const vowelY = latestStudent ? Math.max(18, Math.min(82, 36 + Math.sin(latestStudent / 11) * 24)) : 60;
+  const wordScores = scoreTranscriptWords(activeSentence, transcript);
+  const varianceZones = buildVarianceZones(nativePitch, studentPitch);
+  const vowelDistance = latestStudent ? Math.abs(vowelX - 50) + Math.abs(vowelY - 50) : 0;
+  const vowelSeverity: Severity = !latestStudent ? "good" : vowelDistance > 42 ? "red" : vowelDistance > 25 ? "yellow" : "good";
+  const totalSeverity = summarizeSeverity(wordScores, varianceZones, vowelSeverity);
+  const redWords = wordScores.filter((word) => word.severity === "red").slice(0, 4).map((word) => word.word.replace(/[,.!?;:]$/, ""));
+  const yellowWords = wordScores.filter((word) => word.severity === "yellow").slice(0, 4).map((word) => word.word.replace(/[,.!?;:]$/, ""));
 
   const scrubFromPointer = (clientX: number) => {
     const rect = timelineRef.current?.getBoundingClientRect();
@@ -357,6 +475,13 @@ function AudioStudyPanel({
           ))}
         </div>
         <div className="pitchOverlay" aria-label="Pitch overlay">
+          {varianceZones.map((zone, index) => (
+            <span
+              className={`varianceZone ${zone.severity}`}
+              key={`${zone.start}-${index}`}
+              style={{ left: `${zone.start}%`, width: `${zone.width}%` }}
+            />
+          ))}
           <span className="laneLabel">Native</span>
           <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
             <polyline className="nativeLine" points={nativePolyline} />
@@ -383,11 +508,48 @@ function AudioStudyPanel({
         <span>{sentenceIndex + 1}</span>
         <div>
           <p>Aktiv setning · {currentTime.toFixed(1)}-{duration.toFixed(1)}s</p>
-          <strong>{activeSentence}</strong>
+          <strong>
+            {wordScores.map((score, index) => (
+              <mark className={`wordMark ${score.severity}`} key={`${score.word}-${index}`}>
+                {score.word}
+              </mark>
+            ))}
+          </strong>
         </div>
       </div>
 
-      <div className="vowelChart">
+      <div className={`focusScore ${totalSeverity}`}>
+        <div>
+          <p className="microLabel">Fokusområder</p>
+          <h3>{totalSeverity === "red" ? "Jobb med disse først" : totalSeverity === "yellow" ? "Nesten der" : "God match"}</h3>
+        </div>
+        <ul>
+          <li>
+            <span className={redWords.length ? "red" : "good"} />
+            {redWords.length ? `Mangler/avviker: ${redWords.join(", ")}` : "Ordene i transkripsjonen dekker referansen godt"}
+          </li>
+          <li>
+            <span className={varianceZones.some((zone) => zone.severity === "red") ? "red" : varianceZones.length ? "yellow" : "good"} />
+            {varianceZones.length ? "Se de markerte pitch-sonene i grafen" : "Pitch-konturen har ingen store avvik ennå"}
+          </li>
+          <li>
+            <span className={vowelSeverity} />
+            {vowelSeverity === "red"
+              ? "Vokalplasseringen er langt fra målet"
+              : vowelSeverity === "yellow"
+                ? "Vokalplasseringen bør justeres litt"
+                : "Vokalplasseringen ser stabil ut"}
+          </li>
+          {yellowWords.length > 0 && (
+            <li>
+              <span className="yellow" />
+              Sjekk rekkefølge/trykk: {yellowWords.join(", ")}
+            </li>
+          )}
+        </ul>
+      </div>
+
+      <div className={`vowelChart ${vowelSeverity}`}>
         <div>
           <p className="microLabel">Formant guide · F1/F2</p>
           <h3>Vokalplassering</h3>
@@ -838,6 +1000,7 @@ export default function Home() {
                 currentTime={selectedSentenceTime}
                 duration={selectedSentenceDuration}
                 activeSentence={selectedSegment.sentence}
+                transcript={transcript}
                 sentenceIndex={selectedSentence}
                 studentPitch={studentPitch}
                 isStudentListening={isStudentListening}
