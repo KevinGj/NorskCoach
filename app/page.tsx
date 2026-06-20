@@ -9,7 +9,6 @@ type SessionStage = {
   id: StageId;
   title: string;
   minutes: number;
-  goal: string;
 };
 
 type SessionEntry = {
@@ -73,36 +72,11 @@ const voices: VoiceOption[] = [
 ];
 
 const stages: SessionStage[] = [
-  {
-    id: "reference",
-    title: "Referanse",
-    minutes: 5,
-    goal: "Lytt til en lengre naturlig tekst, studer rytmen, og øv setning for setning."
-  },
-  {
-    id: "shadowing",
-    title: "Shadowing",
-    minutes: 5,
-    goal: "Imiter uttale, rytme og setningsmelodi."
-  },
-  {
-    id: "conversation",
-    title: "Samtale",
-    minutes: 5,
-    goal: "Svar spontant, kun på norsk."
-  },
-  {
-    id: "storytelling",
-    title: "Fortelling",
-    minutes: 3,
-    goal: "Snakk sammenhengende i ett til tre minutter."
-  },
-  {
-    id: "feedback",
-    title: "Coaching",
-    minutes: 2,
-    goal: "Få ett konkret fokusområde for i morgen."
-  }
+  { id: "reference", title: "Referanse", minutes: 5 },
+  { id: "shadowing", title: "Shadowing", minutes: 5 },
+  { id: "conversation", title: "Samtale", minutes: 5 },
+  { id: "storytelling", title: "Fortelling", minutes: 3 },
+  { id: "feedback", title: "Coaching", minutes: 2 }
 ];
 
 const referenceParagraph =
@@ -240,15 +214,28 @@ function normalizePitchToLane(pitch: number | null, samples: number[]) {
   return Math.max(18, Math.min(82, 82 - ((pitch - min) / range) * 64));
 }
 
-function ScoreBar({ label, value }: { label: string; value: number }) {
+function truncateSentence(sentence: string) {
+  return sentence.length > 45 ? `${sentence.slice(0, 45).trim()}...` : sentence;
+}
+
+function MetricCard({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="scoreBar">
-      <div className="scoreLabel">
+    <div className="metricCard">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function ScoreCard({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="scoreCard">
+      <div>
         <span>{label}</span>
         <strong>{value || "--"}</strong>
       </div>
-      <div className="track">
-        <div className="fill" style={{ width: `${value}%` }} />
+      <div className="miniTrack">
+        <span style={{ width: `${value || 7}%` }} />
       </div>
     </div>
   );
@@ -279,30 +266,27 @@ function AudioStudyPanel({
 }) {
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const playheadPercent = Math.min(100, Math.max(0, (currentTime / duration) * 100));
-  const columns = Array.from({ length: 96 }, (_, index) => {
-    const progress = index / 95;
-    const phrasePulse = Math.sin(progress * Math.PI * 12) * 0.5 + 0.5;
+  const columns = Array.from({ length: 108 }, (_, index) => {
+    const progress = index / 107;
+    const phrasePulse = Math.sin(progress * Math.PI * 9) * 0.5 + 0.5;
     const wordPulse = Math.sin(progress * Math.PI * 42) * 0.5 + 0.5;
-    return 24 + phrasePulse * 42 + wordPulse * 24 + (index % 17 === 0 ? 18 : 0);
+    return 18 + phrasePulse * 34 + wordPulse * 24 + (index % 15 === 0 ? 15 : 0);
   });
-  const spectralColumns = Array.from({ length: 72 }, (_, timeIndex) =>
-    Array.from({ length: 24 }, (_, freqIndex) => {
-      const time = timeIndex / 71;
-      const freq = freqIndex / 23;
-      const pitch = 0.28 + Math.sin(time * Math.PI * 3.2) * 0.08 + Math.sin(time * Math.PI * 9) * 0.025;
-      const harmonic = [pitch, pitch * 1.55, pitch * 2.15, pitch * 2.78].some((band) => Math.abs(freq - band) < 0.035);
-      const formant = Math.abs(freq - 0.43) < 0.055 || Math.abs(freq - 0.68) < 0.045;
-      const syllable = Math.sin(time * Math.PI * 24) > -0.45;
-      return harmonic || (formant && syllable);
+  const spectralColumns = Array.from({ length: 82 }, (_, timeIndex) =>
+    Array.from({ length: 9 }, (_, freqIndex) => {
+      const time = timeIndex / 81;
+      const freq = freqIndex / 8;
+      const slope = 0.2 + time * 0.38 + Math.sin(time * Math.PI * 3) * 0.08;
+      const formant = Math.abs(freq - slope) < 0.12 || Math.abs(freq - (slope + 0.22)) < 0.08;
+      return formant && Math.sin(time * Math.PI * 18) > -0.75;
     })
   );
-  const nativePitch = makeNativePitch(sentenceIndex);
-  const nativePolyline = pointsToPolyline(nativePitch);
+  const nativePolyline = pointsToPolyline(makeNativePitch(sentenceIndex));
   const studentPolyline = pointsToPolyline(studentPitch);
   const voicedStudent = studentPitch.filter((point): point is number => point !== null);
   const latestStudent = voicedStudent.at(-1);
-  const vowelX = latestStudent ? Math.max(12, Math.min(88, 100 - latestStudent)) : 50;
-  const vowelY = latestStudent ? Math.max(14, Math.min(84, 28 + Math.sin(latestStudent / 11) * 22)) : 56;
+  const vowelX = latestStudent ? Math.max(15, Math.min(85, 100 - latestStudent)) : 55;
+  const vowelY = latestStudent ? Math.max(18, Math.min(82, 36 + Math.sin(latestStudent / 11) * 24)) : 60;
 
   const scrubFromPointer = (clientX: number) => {
     const rect = timelineRef.current?.getBoundingClientRect();
@@ -312,25 +296,25 @@ function AudioStudyPanel({
   };
 
   return (
-    <div className="audioStudy">
-      <div className="audioStudyHeader">
+    <>
+      <div className="sectionHead">
         <div>
-          <p className="eyebrow">Time, frequency, amplitude</p>
-          <h3>Setningsanalyse</h3>
+          <p>Setningsanalyse · Tid · Frekvens · Amplitude</p>
+          <h2>Se melodien i stemmen</h2>
         </div>
         <div className="analysisActions">
-          <button className="secondary" onClick={onPlayToggle}>
-            {isPlaying ? "Pause" : "Spill setning"}
+          <button className="ghostButton" onClick={onPlayToggle}>
+            {isPlaying ? "Pause" : "▶ Spill setning"}
           </button>
-          <button className={isStudentListening ? "recording" : "secondary"} onClick={onToggleStudent}>
-            {isStudentListening ? "Stopp pitch" : "Mål min pitch"}
+          <button className={isStudentListening ? "recording ghostButton" : "ghostButton activeGhost"} onClick={onToggleStudent}>
+            ● {isStudentListening ? "Stopp pitch" : "Mål min pitch"}
           </button>
         </div>
       </div>
 
       <div
         ref={timelineRef}
-        className="linkedTimeline"
+        className="analysisPanel"
         onPointerDown={(event) => {
           event.currentTarget.setPointerCapture(event.pointerId);
           scrubFromPointer(event.clientX);
@@ -345,21 +329,13 @@ function AudioStudyPanel({
             <span key={index} style={{ height: `${height}%` }} />
           ))}
         </div>
-        <div className="pitchLane nativeLane" aria-label="Native pitch track">
+        <div className="pitchOverlay" aria-label="Pitch overlay">
           <span className="laneLabel">Native</span>
           <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-            <polyline points={nativePolyline} />
+            <polyline className="nativeLine" points={nativePolyline} />
+            {studentPolyline && <polyline className="studentLine" points={studentPolyline} />}
           </svg>
-        </div>
-        <div className="pitchLane studentLane" aria-label="Student pitch track">
-          <span className="laneLabel">Student</span>
-          {studentPolyline ? (
-            <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-              <polyline points={studentPolyline} />
-            </svg>
-          ) : (
-            <p>Start pitch-måling og les setningen for å sammenligne melodien.</p>
-          )}
+          <span className="studentHint">Student · {studentPolyline ? "aktiv kontur" : "venter på opptak"}</span>
         </div>
         <div className="spectrogram" aria-label="Learner-friendly spectrogram">
           {spectralColumns.map((column, index) => (
@@ -370,29 +346,36 @@ function AudioStudyPanel({
             </div>
           ))}
         </div>
+        <div className="timeReadout">
+          <span>{currentTime.toFixed(1)}s</span>
+          <span>{duration.toFixed(1)}s</span>
+        </div>
       </div>
 
-      <div className="timeReadout">
-        <span>{currentTime.toFixed(1)}s</span>
-        <span>{duration.toFixed(1)}s</span>
+      <div className="activeSentence">
+        <span>{sentenceIndex + 1}</span>
+        <div>
+          <p>Aktiv setning · {currentTime.toFixed(1)}-{duration.toFixed(1)}s</p>
+          <strong>{activeSentence}</strong>
+        </div>
       </div>
-      <p className="activeSentence">{activeSentence}</p>
+
       <div className="vowelChart">
         <div>
-          <p className="eyebrow">Formant guide</p>
+          <p className="microLabel">Formant guide · F1/F2</p>
           <h3>Vokalplassering</h3>
-          <p>En forenklet F1/F2-visning hjelper deg å sikte munnen mot norske vokaler.</p>
+          <p>Sikt munnen mot den norske vokalen, punktet viser din nåværende plassering.</p>
         </div>
         <div className="vowelGrid" aria-label="Forenklet vokalkart">
           {["i", "y", "u", "e", "ø", "o", "æ", "a", "å"].map((vowel, index) => (
-            <span className="vowelTarget" key={vowel} style={{ left: `${18 + (index % 3) * 31}%`, top: `${18 + Math.floor(index / 3) * 30}%` }}>
+            <span className="vowelTarget" key={vowel} style={{ left: `${18 + (index % 3) * 32}%`, top: `${18 + Math.floor(index / 3) * 30}%` }}>
               {vowel}
             </span>
           ))}
           <span className="vowelDot" style={{ left: `${vowelX}%`, top: `${vowelY}%` }} />
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -422,10 +405,7 @@ export default function Home() {
   const stage = stages[stageIndex];
   const selectedSegment = referenceSegments[selectedSentence] ?? referenceSegments[0];
   const selectedSentenceDuration = selectedSegment.end - selectedSegment.start;
-  const selectedSentenceTime = Math.min(
-    selectedSentenceDuration,
-    Math.max(0, referenceTime - selectedSegment.start)
-  );
+  const selectedSentenceTime = Math.min(selectedSentenceDuration, Math.max(0, referenceTime - selectedSegment.start));
   const prompt = useMemo(() => {
     if (stage.id === "reference") return referenceSegments[selectedSentence]?.sentence ?? referenceParagraph;
     if (stage.id === "shadowing") return shadowingLines[entries.length % shadowingLines.length];
@@ -491,7 +471,6 @@ export default function Home() {
       stopStudentPitch();
       return;
     }
-
     if (!navigator.mediaDevices?.getUserMedia) return;
 
     let stream: MediaStream;
@@ -501,6 +480,7 @@ export default function Home() {
       setIsStudentListening(false);
       return;
     }
+
     const context = new AudioContext();
     const source = context.createMediaStreamSource(stream);
     const analyser = context.createAnalyser();
@@ -517,10 +497,7 @@ export default function Home() {
       analyser.getFloatTimeDomainData(buffer);
       const pitch = detectPitch(buffer, context.sampleRate);
       if (pitch) voicedSamples.push(pitch);
-      setStudentPitch((current) => {
-        const normalized = normalizePitchToLane(pitch, voicedSamples);
-        return [...current.slice(-90), normalized];
-      });
+      setStudentPitch((current) => [...current.slice(-90), normalizePitchToLane(pitch, voicedSamples)]);
     }, 90);
   };
 
@@ -557,9 +534,7 @@ export default function Home() {
         body: JSON.stringify({ text, voice: selectedVoice, speakingRate: rate })
       });
 
-      if (!response.ok) {
-        throw new Error(await response.text());
-      }
+      if (!response.ok) throw new Error(await response.text());
 
       const blob = await response.blob();
       if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
@@ -697,73 +672,60 @@ export default function Home() {
     setFeedback(null);
   };
 
+  const strengths = profile.strengths.length ? profile.strengths : ["God vilje til å holde samtalen på norsk", "Du svarer tydelig og konsist", "Tydelig artikulasjon"];
+  const patterns = profile.common_patterns.length ? profile.common_patterns : ["litt hakkete rytme"];
+  const issues = profile.pronunciation_issues.length ? profile.pronunciation_issues : ["norske vokaler og konsonantgrupper"];
+
   return (
     <main>
-      <section className="hero">
-        <nav>
-          <span className="brand">Norsk Coach</span>
-          <span className="pill">20 min daglig</span>
-        </nav>
-        <div className="heroGrid">
+      <div className="appFrame">
+        <header className="topBar">
+          <div className="brandLockup">
+            <span className="logoMark">N</span>
+            <strong>Norsk Coach</strong>
+          </div>
+          <span className="dailyPill">• 20 min daglig</span>
+        </header>
+
+        <section className="hero">
           <div>
             <p className="eyebrow">Personlig taletrener</p>
-            <h1>Snakk norsk med bedre rytme, flyt og trygghet.</h1>
+            <h1>Snakk norsk med bedre <em>rytme</em>, flyt og trygghet.</h1>
             <p className="lead">
-              Start med en naturlig norsk referansetekst, se melodien i lydkurvene, og øv deg fra helhet til setning til egen tale.
+              Start med en naturlig norsk referansetekst, se melodien i lydkurven, og øv deg fra helhet til setning til egen tale.
             </p>
           </div>
-          <div className="coachPanel">
+          <div className="focusCard">
             <span>Dagens fokus</span>
-            <strong>{profile.pronunciation_issues[0] ?? "Norsk setningsmelodi"}</strong>
-            <p>{profile.common_patterns[0] ?? "Bygg flyt gjennom lytting, isolert imitasjon og egen gjenfortelling."}</p>
+            <strong>{issues[0]}</strong>
+            <p>• {patterns[0]}</p>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section className="appShell">
-        <aside className="timeline" aria-label="Øktstruktur">
+        <nav className="stageRail" aria-label="Øktstruktur">
           {stages.map((item, index) => (
             <button
-              className={index === stageIndex ? "step active" : "step"}
+              className={index === stageIndex ? "stageStep active" : "stageStep"}
               key={item.id}
               onClick={() => setStageIndex(index)}
             >
-              <span>{item.minutes} min</span>
+              <span>{String(index + 1).padStart(2, "0")} &nbsp;{item.minutes} min</span>
               <strong>{item.title}</strong>
             </button>
           ))}
-        </aside>
+        </nav>
 
-        <section className="practice">
-          <div className="practiceHeader">
-            <div>
-              <p className="eyebrow">{stage.minutes} minutter</p>
-              <h2>{stage.title}</h2>
-              <p>{stage.goal}</p>
-            </div>
-            <div className="voiceControls">
-              <label>
-                Norsk stemme
-                <select value={selectedVoice} onChange={(event) => setSelectedVoice(event.target.value)}>
-                  {voices.map((voice) => (
-                    <option key={voice.name} value={voice.name}>
-                      {voice.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button className="secondary" onClick={speak} disabled={isSpeechLoading}>
-                {isSpeechLoading ? "Henter lyd..." : stage.id === "reference" && isAudioPlaying ? "Pause" : "Spill av"}
-              </button>
-            </div>
-          </div>
+        <section className="metricsGrid">
+          <MetricCard label="Minutter" value={totalMinutes} />
+          <MetricCard label="Dager på rad" value={streak(entries)} />
+          <ScoreCard label="Uttale" value={activeScores.pronunciation} />
+          <ScoreCard label="Rytme" value={activeScores.rhythm} />
+          <ScoreCard label="Flyt" value={activeScores.fluency} />
+        </section>
 
-          {stage.id === "reference" ? (
-            <>
-              <div className="referenceText">
-                <span>Referansetekst</span>
-                <p>{referenceParagraph}</p>
-              </div>
+        <section className="workspace">
+          <div className="analysisColumn">
+            {stage.id === "reference" ? (
               <AudioStudyPanel
                 currentTime={selectedSentenceTime}
                 duration={selectedSentenceDuration}
@@ -776,45 +738,119 @@ export default function Home() {
                 onPlayToggle={playSelectedSentence}
                 onToggleStudent={() => void toggleStudentPitch()}
               />
-              <div className="sentencePractice">
-                <h3>Øv setning for setning</h3>
-                {referenceSegments.map((segment, index) => (
-                  <button
-                    className={index === selectedSentence ? "sentence active" : "sentence"}
-                    key={segment.sentence}
-                    onClick={() => {
-                      stopAudio();
-                      stopStudentPitch();
-                      setSelectedSentence(index);
-                      setReferenceTime(segment.start);
-                      setStudentPitch([]);
-                      void playGoogleSpeech(segment.sentence, 0.88, segment.start, true);
-                    }}
-                  >
-                    <span>{index + 1}</span>
-                    {segment.sentence}
-                  </button>
-                ))}
+            ) : (
+              <div className="promptBox">
+                <p className="microLabel">Coach sier</p>
+                <h2>{prompt}</h2>
               </div>
-            </>
-          ) : (
-            <div className="promptBox">
-              <span>Coach sier</span>
-              <p>{prompt}</p>
-            </div>
-          )}
+            )}
+          </div>
 
+          <aside className="referenceColumn">
+            <div className="playControls">
+              <label>
+                Norsk stemme
+                <select value={selectedVoice} onChange={(event) => setSelectedVoice(event.target.value)}>
+                  {voices.map((voice) => (
+                    <option key={voice.name} value={voice.name}>
+                      {voice.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button className="playButton" onClick={speak} disabled={isSpeechLoading}>
+                {isSpeechLoading ? "Henter lyd..." : isAudioPlaying ? "Pause" : "▶ Spill av"}
+              </button>
+            </div>
+
+            {stage.id === "reference" ? (
+              <>
+                <div className="referenceText">
+                  <p className="microLabel">Referansetekst</p>
+                  <p>
+                    {referenceSegments.map((segment, index) => (
+                      <span className={index === selectedSentence ? "highlightSentence" : ""} key={segment.sentence}>
+                        {segment.sentence}{" "}
+                      </span>
+                    ))}
+                  </p>
+                </div>
+                <div className="sentencePractice">
+                  <h3>Øv setning for setning</h3>
+                  {referenceSegments.map((segment, index) => (
+                    <button
+                      className={index === selectedSentence ? "sentence active" : "sentence"}
+                      key={segment.sentence}
+                      onClick={() => {
+                        stopAudio();
+                        stopStudentPitch();
+                        setSelectedSentence(index);
+                        setReferenceTime(segment.start);
+                        setStudentPitch([]);
+                        void playGoogleSpeech(segment.sentence, 0.88, segment.start, true);
+                      }}
+                    >
+                      <span>{index + 1}</span>
+                      {truncateSentence(segment.sentence)}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="referenceText">
+                <p className="microLabel">Øvelse</p>
+                <p>{stage.id === "feedback" ? "Dagens oppsummering er klar. Lagre økten, og kom tilbake i morgen med ett tydelig fokus." : prompt}</p>
+              </div>
+            )}
+          </aside>
+        </section>
+
+        <section className="profileGrid">
+          <div>
+            <h3>Styrker</h3>
+            {strengths.slice(0, 3).map((item) => (
+              <p className="checkLine" key={item}>✓ {item}</p>
+            ))}
+          </div>
+          <div>
+            <h3>Mønstre</h3>
+            {patterns.slice(0, 3).map((item) => (
+              <p className="warnLine" key={item}>• {item}</p>
+            ))}
+          </div>
+          <div>
+            <h3>Øv på</h3>
+            <span className="issueChip">{issues[0]}</span>
+          </div>
+        </section>
+
+        {feedback && (
+          <section className="feedbackGrid">
+            <div>
+              <h3>Styrker fra analysen</h3>
+              {feedback.strengths.map((item) => (
+                <p key={item}>{item}</p>
+              ))}
+            </div>
+            <div>
+              <h3>Forbedre</h3>
+              {feedback.improvements.map((item) => (
+                <p key={item}>{item}</p>
+              ))}
+            </div>
+          </section>
+        )}
+
+        <footer className="bottomBar">
           {stage.id !== "feedback" ? (
             <>
-              <div className="recorder">
-                <button className={isListening ? "recording" : "primary"} onClick={toggleListening}>
-                  {isListening ? "Stopp opptak" : "Start tale"}
-                </button>
-                <button className="secondary" onClick={analyze} disabled={isLoading}>
-                  {isLoading ? "Analyserer..." : "Analyser"}
-                </button>
-              </div>
-              <textarea
+              <button className={isListening ? "recording primary" : "primary"} onClick={toggleListening}>
+                ● {isListening ? "Stopp opptak" : "Start tale"}
+              </button>
+              <button className="ghostButton" onClick={analyze} disabled={isLoading}>
+                {isLoading ? "Analyserer..." : "Analyser"}
+              </button>
+              <input
                 aria-label="Transkripsjon"
                 value={transcript}
                 onChange={(event) => setTranscript(event.target.value)}
@@ -826,72 +862,19 @@ export default function Home() {
               />
             </>
           ) : (
-            <div className="finalPrompt">
-              <strong>Dagens oppsummering er klar.</strong>
-              <p>Se coachingkortet, lagre økten, og kom tilbake i morgen med ett tydelig fokus.</p>
-            </div>
+            <span className="bottomHint">Dagens oppsummering er klar.</span>
           )}
-
-          {feedback && (
-            <div className="feedbackGrid">
-              <div>
-                <h3>Styrker</h3>
-                {feedback.strengths.map((item) => (
-                  <p key={item}>{item}</p>
-                ))}
-              </div>
-              <div>
-                <h3>Forbedre</h3>
-                {feedback.improvements.map((item) => (
-                  <p key={item}>{item}</p>
-                ))}
-              </div>
-            </div>
+          {stageIndex < stages.length - 1 ? (
+            <button className="nextButton" onClick={nextStage}>
+              Neste øvelse →
+            </button>
+          ) : (
+            <button className="nextButton" onClick={finishSession}>
+              Lagre dagens økt
+            </button>
           )}
-
-          <div className="actions">
-            {stageIndex < stages.length - 1 ? (
-              <button className="primary" onClick={nextStage}>
-                Neste øvelse
-              </button>
-            ) : (
-              <button className="primary" onClick={finishSession}>
-                Lagre dagens økt
-              </button>
-            )}
-          </div>
-        </section>
-
-        <aside className="dashboard">
-          <h2>Fremgang</h2>
-          <div className="stats">
-            <div>
-              <span>Minutter</span>
-              <strong>{totalMinutes}</strong>
-            </div>
-            <div>
-              <span>Dager på rad</span>
-              <strong>{streak(entries)}</strong>
-            </div>
-          </div>
-          <ScoreBar label="Uttale" value={activeScores.pronunciation} />
-          <ScoreBar label="Rytme" value={activeScores.rhythm} />
-          <ScoreBar label="Flyt" value={activeScores.fluency} />
-
-          <div className="profile">
-            <h3>Læringsprofil</h3>
-            <p>
-              <strong>Styrker:</strong> {profile.strengths.join(", ") || "samles etter første analyse"}
-            </p>
-            <p>
-              <strong>Mønstre:</strong> {profile.common_patterns.join(", ") || "ingen mønstre ennå"}
-            </p>
-            <p>
-              <strong>Øv på:</strong> {profile.pronunciation_issues.join(", ") || "norsk melodi"}
-            </p>
-          </div>
-        </aside>
-      </section>
+        </footer>
+      </div>
     </main>
   );
 }
