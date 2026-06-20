@@ -45,7 +45,7 @@ nav,
 .heroGrid,
 .appShell {
   margin: 0 auto;
-  max-width: 1180px;
+  max-width: 1540px;
 }
 
 nav {
@@ -76,7 +76,7 @@ nav {
 }
 
 .heroGrid {
-  align-items: end;
+  align-items: flex-end;
   display: grid;
   gap: 28px;
   grid-template-columns: 1.5fr 0.8fr;
@@ -146,10 +146,10 @@ h3 {
 }
 
 .appShell {
-  align-items: start;
+  align-items: flex-start;
   display: grid;
   gap: 18px;
-  grid-template-columns: 170px minmax(0, 1fr) 310px;
+  grid-template-columns: 180px minmax(680px, 1fr) minmax(360px, 460px);
   padding: 28px clamp(18px, 4vw, 56px) 64px;
 }
 
@@ -263,6 +263,7 @@ h3 {
   font-size: 1.08rem;
   line-height: 1.7;
   margin-bottom: 0;
+  max-width: 72ch;
 }
 
 .audioStudy {
@@ -283,6 +284,13 @@ h3 {
 .audioStudyHeader h3,
 .audioStudyHeader p {
   margin-bottom: 0;
+}
+
+.analysisActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
 }
 
 .linkedTimeline {
@@ -322,10 +330,64 @@ h3 {
   opacity: 0.9;
 }
 
+.pitchLane {
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  height: 118px;
+  position: relative;
+}
+
+.pitchLane svg {
+  height: 100%;
+  inset: 0;
+  position: absolute;
+  width: 100%;
+}
+
+.pitchLane polyline {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.8;
+  vector-effect: non-scaling-stroke;
+}
+
+.nativeLane polyline {
+  stroke: #7bbcff;
+}
+
+.studentLane polyline {
+  stroke: #f3c663;
+}
+
+.studentLane p {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.9rem;
+  left: 92px;
+  margin: 0;
+  position: absolute;
+  right: 18px;
+  top: 42px;
+}
+
+.laneLabel {
+  background: rgba(255, 255, 255, 0.09);
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.74rem;
+  font-weight: 800;
+  left: 12px;
+  padding: 5px 8px;
+  position: absolute;
+  text-transform: uppercase;
+  top: 10px;
+  z-index: 3;
+}
+
 .spectrogram {
   display: grid;
   grid-template-columns: repeat(72, 1fr);
-  height: 190px;
+  height: 150px;
   padding: 10px 12px;
   position: relative;
 }
@@ -345,22 +407,6 @@ h3 {
   box-shadow: 0 0 5px rgba(255, 244, 173, 0.32);
 }
 
-.pitchTrack {
-  inset: 10px 12px;
-  pointer-events: none;
-  position: absolute;
-  z-index: 3;
-}
-
-.pitchTrack polyline {
-  fill: none;
-  stroke: #f7f2df;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.8;
-  vector-effect: non-scaling-stroke;
-}
-
 .timeReadout {
   color: var(--muted);
   display: flex;
@@ -375,6 +421,60 @@ h3 {
   line-height: 1.5;
   margin: 12px 0 0;
   padding-left: 12px;
+}
+
+.vowelChart {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(180px, 0.7fr) minmax(260px, 1fr);
+  margin-top: 18px;
+  padding-top: 18px;
+}
+
+.vowelChart p {
+  color: var(--muted);
+  line-height: 1.5;
+  margin-bottom: 0;
+}
+
+.vowelGrid {
+  background:
+    linear-gradient(rgba(22, 91, 77, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(22, 91, 77, 0.08) 1px, transparent 1px),
+    #f8f5ed;
+  background-size: 25% 25%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  min-height: 220px;
+  position: relative;
+}
+
+.vowelTarget {
+  align-items: center;
+  background: rgba(22, 91, 77, 0.12);
+  border: 1px solid rgba(22, 91, 77, 0.25);
+  border-radius: 999px;
+  color: var(--accent);
+  display: inline-flex;
+  font-weight: 800;
+  height: 38px;
+  justify-content: center;
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 38px;
+}
+
+.vowelDot {
+  background: var(--accent-2);
+  border: 3px solid white;
+  border-radius: 999px;
+  box-shadow: 0 10px 24px rgba(24, 32, 28, 0.2);
+  height: 18px;
+  position: absolute;
+  transform: translate(-50%, -50%);
+  transition: left 120ms ease, top 120ms ease;
+  width: 18px;
 }
 
 .sentencePractice {
@@ -566,6 +666,10 @@ textarea:focus {
     border-left: 0;
     border-top: 3px solid var(--line);
   }
+
+  .vowelChart {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 640px) {
@@ -585,6 +689,10 @@ textarea:focus {
 
   .audioStudyHeader {
     align-items: stretch;
+    display: grid;
+  }
+
+  .analysisActions {
     display: grid;
   }
 

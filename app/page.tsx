@@ -53,6 +53,8 @@ type VoiceOption = {
   label: string;
 };
 
+type PitchPoint = number | null;
+
 declare global {
   interface Window {
     webkitSpeechRecognition?: SpeechRecognitionConstructor;
@@ -183,6 +185,61 @@ function segmentAtTime(time: number) {
   return referenceSegments.find((segment) => time >= segment.start && time <= segment.end) ?? referenceSegments[0];
 }
 
+function makeNativePitch(sentenceIndex: number, count = 72): PitchPoint[] {
+  return Array.from({ length: count }, (_, index) => {
+    const progress = index / (count - 1);
+    const unvoicedGate = Math.sin(progress * Math.PI * (9 + sentenceIndex)) < -0.72;
+    if (unvoicedGate && index % 3 !== 0) return null;
+    const phraseFall = progress * 20;
+    const melody = Math.sin(progress * Math.PI * (2.6 + sentenceIndex * 0.12)) * 16;
+    const syllableLift = Math.sin(progress * Math.PI * (12 + sentenceIndex)) * 5;
+    return Math.max(18, Math.min(82, 45 - melody + phraseFall - syllableLift));
+  });
+}
+
+function pointsToPolyline(points: PitchPoint[]) {
+  return points
+    .map((point, index) => {
+      if (point === null) return "";
+      return `${(index / Math.max(1, points.length - 1)) * 100},${point}`;
+    })
+    .filter(Boolean)
+    .join(" ");
+}
+
+function detectPitch(buffer: Float32Array, sampleRate: number) {
+  const rms = Math.sqrt(buffer.reduce((sum, sample) => sum + sample * sample, 0) / buffer.length);
+  if (rms < 0.018) return null;
+
+  let bestOffset = -1;
+  let bestCorrelation = 0;
+  const minOffset = Math.floor(sampleRate / 420);
+  const maxOffset = Math.floor(sampleRate / 75);
+
+  for (let offset = minOffset; offset <= maxOffset; offset += 1) {
+    let correlation = 0;
+    for (let index = 0; index < buffer.length - offset; index += 1) {
+      correlation += buffer[index] * buffer[index + offset];
+    }
+    if (correlation > bestCorrelation) {
+      bestCorrelation = correlation;
+      bestOffset = offset;
+    }
+  }
+
+  if (bestOffset < 0 || bestCorrelation < 0.01) return null;
+  return sampleRate / bestOffset;
+}
+
+function normalizePitchToLane(pitch: number | null, samples: number[]) {
+  if (!pitch) return null;
+  const voiced = samples.length ? samples : [110, 220];
+  const min = Math.min(...voiced);
+  const max = Math.max(...voiced);
+  const range = Math.max(1, max - min);
+  return Math.max(18, Math.min(82, 82 - ((pitch - min) / range) * 64));
+}
+
 function ScoreBar({ label, value }: { label: string; value: number }) {
   return (
     <div className="scoreBar">
@@ -201,16 +258,24 @@ function AudioStudyPanel({
   currentTime,
   duration,
   activeSentence,
+  sentenceIndex,
+  studentPitch,
+  isStudentListening,
   isPlaying,
   onScrub,
-  onPlayToggle
+  onPlayToggle,
+  onToggleStudent
 }: {
   currentTime: number;
   duration: number;
   activeSentence: string;
+  sentenceIndex: number;
+  studentPitch: PitchPoint[];
+  isStudentListening: boolean;
   isPlaying: boolean;
   onScrub: (time: number) => void;
   onPlayToggle: () => void;
+  onToggleStudent: () => void;
 }) {
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const playheadPercent = Math.min(100, Math.max(0, (currentTime / duration) * 100));
@@ -231,11 +296,13 @@ function AudioStudyPanel({
       return harmonic || (formant && syllable);
     })
   );
-  const pitchPoints = Array.from({ length: 32 }, (_, index) => {
-    const x = (index / 31) * 100;
-    const y = 54 - Math.sin(index * 0.72) * 18 - Math.sin(index * 0.21) * 9;
-    return `${x},${Math.max(18, Math.min(78, y))}`;
-  }).join(" ");
+  const nativePitch = makeNativePitch(sentenceIndex);
+  const nativePolyline = pointsToPolyline(nativePitch);
+  const studentPolyline = pointsToPolyline(studentPitch);
+  const voicedStudent = studentPitch.filter((point): point is number => point !== null);
+  const latestStudent = voicedStudent.at(-1);
+  const vowelX = latestStudent ? Math.max(12, Math.min(88, 100 - latestStudent)) : 50;
+  const vowelY = latestStudent ? Math.max(14, Math.min(84, 28 + Math.sin(latestStudent / 11) * 22)) : 56;
 
   const scrubFromPointer = (clientX: number) => {
     const rect = timelineRef.current?.getBoundingClientRect();
@@ -249,11 +316,16 @@ function AudioStudyPanel({
       <div className="audioStudyHeader">
         <div>
           <p className="eyebrow">Time, frequency, amplitude</p>
-          <h3>Referansevisualisering</h3>
+          <h3>Setningsanalyse</h3>
         </div>
-        <button className="secondary" onClick={onPlayToggle}>
-          {isPlaying ? "Pause" : "Spill av"}
-        </button>
+        <div className="analysisActions">
+          <button className="secondary" onClick={onPlayToggle}>
+            {isPlaying ? "Pause" : "Spill setning"}
+          </button>
+          <button className={isStudentListening ? "recording" : "secondary"} onClick={onToggleStudent}>
+            {isStudentListening ? "Stopp pitch" : "Mål min pitch"}
+          </button>
+        </div>
       </div>
 
       <div
@@ -268,12 +340,28 @@ function AudioStudyPanel({
         }}
       >
         <div className="playhead" style={{ left: `${playheadPercent}%` }} />
-        <div className="waveform" aria-label="Waveform">
+        <div className="waveform" aria-label="Waveform for valgt setning">
           {columns.map((height, index) => (
             <span key={index} style={{ height: `${height}%` }} />
           ))}
         </div>
-        <div className="spectrogram" aria-label="Spectrogram">
+        <div className="pitchLane nativeLane" aria-label="Native pitch track">
+          <span className="laneLabel">Native</span>
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+            <polyline points={nativePolyline} />
+          </svg>
+        </div>
+        <div className="pitchLane studentLane" aria-label="Student pitch track">
+          <span className="laneLabel">Student</span>
+          {studentPolyline ? (
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+              <polyline points={studentPolyline} />
+            </svg>
+          ) : (
+            <p>Start pitch-måling og les setningen for å sammenligne melodien.</p>
+          )}
+        </div>
+        <div className="spectrogram" aria-label="Learner-friendly spectrogram">
           {spectralColumns.map((column, index) => (
             <div className="spectralColumn" key={index}>
               {column.map((active, freqIndex) => (
@@ -281,9 +369,6 @@ function AudioStudyPanel({
               ))}
             </div>
           ))}
-          <svg className="pitchTrack" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-            <polyline points={pitchPoints} />
-          </svg>
         </div>
       </div>
 
@@ -292,6 +377,21 @@ function AudioStudyPanel({
         <span>{duration.toFixed(1)}s</span>
       </div>
       <p className="activeSentence">{activeSentence}</p>
+      <div className="vowelChart">
+        <div>
+          <p className="eyebrow">Formant guide</p>
+          <h3>Vokalplassering</h3>
+          <p>En forenklet F1/F2-visning hjelper deg å sikte munnen mot norske vokaler.</p>
+        </div>
+        <div className="vowelGrid" aria-label="Forenklet vokalkart">
+          {["i", "y", "u", "e", "ø", "o", "æ", "a", "å"].map((vowel, index) => (
+            <span className="vowelTarget" key={vowel} style={{ left: `${18 + (index % 3) * 31}%`, top: `${18 + Math.floor(index / 3) * 30}%` }}>
+              {vowel}
+            </span>
+          ))}
+          <span className="vowelDot" style={{ left: `${vowelX}%`, top: `${vowelY}%` }} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -303,6 +403,8 @@ export default function Home() {
   const [referenceTime, setReferenceTime] = useState(0);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [isSpeechLoading, setIsSpeechLoading] = useState(false);
+  const [studentPitch, setStudentPitch] = useState<PitchPoint[]>([]);
+  const [isStudentListening, setIsStudentListening] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [feedback, setFeedback] = useState<CoachFeedback | null>(null);
   const [profile, setProfile] = useState<LearnerProfile>(emptyProfile);
@@ -312,10 +414,18 @@ export default function Home() {
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
+  const micContextRef = useRef<AudioContext | null>(null);
+  const micStreamRef = useRef<MediaStream | null>(null);
+  const micIntervalRef = useRef<number | null>(null);
   const playbackOffsetRef = useRef(0);
 
   const stage = stages[stageIndex];
-  const activeReferenceSegment = segmentAtTime(referenceTime);
+  const selectedSegment = referenceSegments[selectedSentence] ?? referenceSegments[0];
+  const selectedSentenceDuration = selectedSegment.end - selectedSegment.start;
+  const selectedSentenceTime = Math.min(
+    selectedSentenceDuration,
+    Math.max(0, referenceTime - selectedSegment.start)
+  );
   const prompt = useMemo(() => {
     if (stage.id === "reference") return referenceSegments[selectedSentence]?.sentence ?? referenceParagraph;
     if (stage.id === "shadowing") return shadowingLines[entries.length % shadowingLines.length];
@@ -352,6 +462,9 @@ export default function Home() {
     return () => {
       audioRef.current?.pause();
       if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+      micStreamRef.current?.getTracks().forEach((track) => track.stop());
+      if (micIntervalRef.current) window.clearInterval(micIntervalRef.current);
+      void micContextRef.current?.close();
     };
   }, []);
 
@@ -359,6 +472,56 @@ export default function Home() {
     audioRef.current?.pause();
     window.speechSynthesis?.cancel();
     setIsAudioPlaying(false);
+  };
+
+  const stopStudentPitch = () => {
+    if (micIntervalRef.current) {
+      window.clearInterval(micIntervalRef.current);
+      micIntervalRef.current = null;
+    }
+    micStreamRef.current?.getTracks().forEach((track) => track.stop());
+    micStreamRef.current = null;
+    void micContextRef.current?.close();
+    micContextRef.current = null;
+    setIsStudentListening(false);
+  };
+
+  const toggleStudentPitch = async () => {
+    if (isStudentListening) {
+      stopStudentPitch();
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) return;
+
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      setIsStudentListening(false);
+      return;
+    }
+    const context = new AudioContext();
+    const source = context.createMediaStreamSource(stream);
+    const analyser = context.createAnalyser();
+    analyser.fftSize = 2048;
+    source.connect(analyser);
+    const buffer = new Float32Array(analyser.fftSize);
+    const voicedSamples: number[] = [];
+
+    setStudentPitch([]);
+    setIsStudentListening(true);
+    micStreamRef.current = stream;
+    micContextRef.current = context;
+    micIntervalRef.current = window.setInterval(() => {
+      analyser.getFloatTimeDomainData(buffer);
+      const pitch = detectPitch(buffer, context.sampleRate);
+      if (pitch) voicedSamples.push(pitch);
+      setStudentPitch((current) => {
+        const normalized = normalizePitchToLane(pitch, voicedSamples);
+        return [...current.slice(-90), normalized];
+      });
+    }, 90);
   };
 
   const fallbackSpeech = (text: string, rate: number, offset: number, trackReference: boolean) => {
@@ -410,7 +573,10 @@ export default function Home() {
       audio.onended = () => setIsAudioPlaying(false);
       audio.ontimeupdate = () => {
         if (trackReference) {
-          setReferenceTime(Math.min(referenceDuration, playbackOffsetRef.current + audio.currentTime));
+          const nextTime = Math.min(referenceDuration, playbackOffsetRef.current + audio.currentTime);
+          setReferenceTime(nextTime);
+          const segment = segmentAtTime(nextTime);
+          setSelectedSentence(Math.max(0, referenceSegments.indexOf(segment)));
         }
       };
       await audio.play();
@@ -422,32 +588,38 @@ export default function Home() {
     }
   };
 
-  const playReference = () => {
+  const playFullReference = () => {
     if (isAudioPlaying) {
       stopAudio();
       return;
     }
-    const segment = segmentAtTime(referenceTime);
-    const startIndex = Math.max(0, referenceSegments.indexOf(segment));
-    const text = referenceSegments.slice(startIndex).map((item) => item.sentence).join(" ");
-    setSelectedSentence(startIndex);
-    void playGoogleSpeech(text, 0.92, segment.start, true);
+    setSelectedSentence(0);
+    setReferenceTime(0);
+    void playGoogleSpeech(referenceParagraph, 0.92, 0, true);
+  };
+
+  const playSelectedSentence = () => {
+    if (isAudioPlaying) {
+      stopAudio();
+      return;
+    }
+    setReferenceTime(selectedSegment.start);
+    setStudentPitch([]);
+    void playGoogleSpeech(selectedSegment.sentence, 0.9, selectedSegment.start, true);
   };
 
   const scrubReference = (time: number) => {
-    setReferenceTime(time);
-    playbackOffsetRef.current = time;
-    const segment = segmentAtTime(time);
-    const startIndex = Math.max(0, referenceSegments.indexOf(segment));
-    setSelectedSentence(startIndex);
+    const globalTime = selectedSegment.start + Math.min(selectedSentenceDuration, Math.max(0, time));
+    setReferenceTime(globalTime);
+    playbackOffsetRef.current = globalTime;
     if (isAudioPlaying) {
-      void playGoogleSpeech(referenceSegments.slice(startIndex).map((item) => item.sentence).join(" "), 0.92, segment.start, true);
+      void playGoogleSpeech(selectedSegment.sentence, 0.9, selectedSegment.start, true);
     }
   };
 
   const speak = () => {
     if (stage.id === "reference") {
-      playReference();
+      playFullReference();
       return;
     }
     void playGoogleSpeech(prompt, stage.id === "shadowing" ? 0.9 : 0.96);
@@ -508,6 +680,7 @@ export default function Home() {
     setTranscript("");
     setFeedback(null);
     stopAudio();
+    stopStudentPitch();
   };
 
   const finishSession = () => {
@@ -592,12 +765,16 @@ export default function Home() {
                 <p>{referenceParagraph}</p>
               </div>
               <AudioStudyPanel
-                currentTime={referenceTime}
-                duration={referenceDuration}
-                activeSentence={activeReferenceSegment.sentence}
+                currentTime={selectedSentenceTime}
+                duration={selectedSentenceDuration}
+                activeSentence={selectedSegment.sentence}
+                sentenceIndex={selectedSentence}
+                studentPitch={studentPitch}
+                isStudentListening={isStudentListening}
                 isPlaying={isAudioPlaying}
                 onScrub={scrubReference}
-                onPlayToggle={playReference}
+                onPlayToggle={playSelectedSentence}
+                onToggleStudent={() => void toggleStudentPitch()}
               />
               <div className="sentencePractice">
                 <h3>Øv setning for setning</h3>
@@ -606,8 +783,11 @@ export default function Home() {
                     className={index === selectedSentence ? "sentence active" : "sentence"}
                     key={segment.sentence}
                     onClick={() => {
+                      stopAudio();
+                      stopStudentPitch();
                       setSelectedSentence(index);
                       setReferenceTime(segment.start);
+                      setStudentPitch([]);
                       void playGoogleSpeech(segment.sentence, 0.88, segment.start, true);
                     }}
                   >
