@@ -1537,6 +1537,8 @@ export default function Home() {
           </div>
         </section>
 
+        <section className="studyShell">
+        <aside className="leftRail">
         <nav className="stageRail" aria-label="Øktstruktur">
           {stages.map((item, index) => (
             <button
@@ -1557,6 +1559,45 @@ export default function Home() {
           <ScoreCard label="Rytme" value={activeScores.rhythm} />
           <ScoreCard label="Flyt" value={activeScores.fluency} />
         </section>
+
+        {stage.id === "reference" && (
+          <div className="segmentLibrary railLibrary">
+            <div className="libraryFilters">
+              <label>
+                Spor
+                <select value={trackFilter} onChange={(event) => setTrackFilter(event.target.value)}>
+                  <option value="all">Alle spor</option>
+                  {trackOptions.map((track) => (
+                    <option key={track} value={track}>
+                      {track.replace(".mp3", "")}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Søk
+                <input
+                  value={segmentQuery}
+                  onChange={(event) => setSegmentQuery(event.target.value)}
+                  placeholder="Søk i tekst eller spor"
+                />
+              </label>
+            </div>
+            <div className="segmentList">
+              {filteredLibrarySegments.slice(0, 60).map((segment) => (
+                <button
+                  className={segment.id === selectedAudioSegment.id ? "librarySegment active" : "librarySegment"}
+                  key={segment.id}
+                  onClick={() => setSelectedAudioSegmentId(segment.id)}
+                >
+                  <span>{segment.source.replace(".mp3", "")} · {segment.duration.toFixed(1)}s</span>
+                  <strong>{truncateSentence(segment.text)}</strong>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        </aside>
 
         <section className="workspace">
           <div className="analysisColumn">
@@ -1779,6 +1820,7 @@ export default function Home() {
               </div>
             )}
           </aside>
+        </section>
         </section>
 
         <section className="profileGrid">
