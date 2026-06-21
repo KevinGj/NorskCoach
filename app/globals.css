@@ -987,6 +987,13 @@ h1 em {
   width: 100%;
 }
 
+.analysisMessage {
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.4;
+  margin: -2px 0 0;
+}
+
 .profileGrid,
 .feedbackGrid {
   display: grid;
@@ -1048,25 +1055,9 @@ h1 em {
   margin: 28px 46px 46px;
 }
 
-.bottomBar > .primary,
-.bottomBar > .ghostButton,
-.bottomBar > input {
-  display: none;
-}
-
 .bottomBar .nextButton {
   grid-column: 2;
   justify-self: end;
-}
-
-.bottomBar input {
-  background: #07110d;
-  border: 1px solid #243b32;
-  border-radius: 9px;
-  color: var(--ink);
-  min-height: 44px;
-  outline: none;
-  padding: 0 18px;
 }
 
 .bottomHint {

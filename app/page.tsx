@@ -818,7 +818,7 @@ function AudioStudyPanel({
         </div>
         <div className="analysisActions">
           <button className={isStudentListening ? "recording ghostButton" : "ghostButton activeGhost"} onClick={onToggleStudent}>
-            ● {isStudentListening ? "Stopp pitch" : "Mål min pitch"}
+            {isStudentListening ? "Stopp pitch" : "Mål min pitch"}
           </button>
         </div>
       </div>
@@ -976,6 +976,7 @@ export default function Home() {
   const [isStudentListening, setIsStudentListening] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [feedback, setFeedback] = useState<CoachFeedback | null>(null);
+  const [analysisMessage, setAnalysisMessage] = useState("");
   const [profile, setProfile] = useState<LearnerProfile>(emptyProfile);
   const [entries, setEntries] = useState<SessionEntry[]>([]);
   const [isListening, setIsListening] = useState(false);
@@ -1413,6 +1414,7 @@ export default function Home() {
   };
 
   const toggleListening = () => {
+    setAnalysisMessage("");
     const Recognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
     if (!Recognition) {
       setTranscript((current) => current || "Nettleseren din støtter ikke talegjenkjenning. Skriv svaret ditt her.");
@@ -1444,21 +1446,33 @@ export default function Home() {
 
   const analyze = async () => {
     if (stage.id === "feedback") return;
+    if (!transcript.trim()) {
+      setAnalysisMessage("Start tale først, eller skriv/lim inn en STT-transkripsjon.");
+      return;
+    }
     setIsLoading(true);
-    const response = await fetch("/api/coach", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        type: stage.id === "reference" ? "shadowing" : stage.id,
-        transcript,
-        prompt: stage.id === "reference" ? selectedAudioSegment.text : prompt,
-        profile
-      })
-    });
-    const result = (await response.json()) as CoachFeedback;
-    setFeedback(result);
-    setProfile(result.profile);
-    setIsLoading(false);
+    setAnalysisMessage("");
+    try {
+      const response = await fetch("/api/coach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: stage.id === "reference" ? "shadowing" : stage.id,
+          transcript,
+          prompt: stage.id === "reference" ? selectedAudioSegment.text : prompt,
+          profile
+        })
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const result = (await response.json()) as CoachFeedback;
+      setFeedback(result);
+      setProfile(result.profile);
+      setAnalysisMessage("Analyse klar. Se fokusområder og coach-feedback under.");
+    } catch {
+      setAnalysisMessage("Kunne ikke kjøre analysen akkurat nå.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const nextStage = () => {
@@ -1466,6 +1480,7 @@ export default function Home() {
     setStageIndex((current) => current + 1);
     setTranscript("");
     setFeedback(null);
+    setAnalysisMessage("");
     stopAudio();
     stopStudentPitch();
   };
@@ -1482,6 +1497,7 @@ export default function Home() {
     setStageIndex(0);
     setTranscript("");
     setFeedback(null);
+    setAnalysisMessage("");
   };
 
   const strengths = profile.strengths.length ? profile.strengths : ["God vilje til å holde samtalen på norsk", "Du svarer tydelig og konsist", "Tydelig artikulasjon"];
@@ -1573,7 +1589,7 @@ export default function Home() {
                   <div className="practiceInput inlinePractice">
                     <div className="practiceActions">
                       <button className={isListening ? "recording primary" : "primary"} onClick={toggleListening}>
-                        â— {isListening ? "Stopp opptak" : "Start tale"}
+                        {isListening ? "Stopp opptak" : "Start tale"}
                       </button>
                       <button className="ghostButton" onClick={analyze} disabled={isLoading}>
                         {isLoading ? "Analyserer..." : "Analyser"}
@@ -1585,6 +1601,7 @@ export default function Home() {
                       onChange={(event) => setTranscript(event.target.value)}
                       placeholder="STT-transkripsjonen vises her. Den kan inneholde feil i ord og tegnsetting."
                     />
+                    {analysisMessage && <p className="analysisMessage">{analysisMessage}</p>}
                   </div>
                 )}
               </div>
@@ -1720,7 +1737,7 @@ export default function Home() {
                 <div className="practiceInput">
                   <div className="practiceActions">
                     <button className={isListening ? "recording primary" : "primary"} onClick={toggleListening}>
-                      â— {isListening ? "Stopp opptak" : "Start tale"}
+                      {isListening ? "Stopp opptak" : "Start tale"}
                     </button>
                     <button className="ghostButton" onClick={analyze} disabled={isLoading}>
                       {isLoading ? "Analyserer..." : "Analyser"}
@@ -1732,6 +1749,7 @@ export default function Home() {
                     onChange={(event) => setTranscript(event.target.value)}
                     placeholder="STT-transkripsjonen vises her. Den kan inneholde feil i ord og tegnsetting."
                   />
+                  {analysisMessage && <p className="analysisMessage">{analysisMessage}</p>}
                 </div>
                 <div className="sentencePractice">
                   <h3>{activeReferenceSegments.length > 1 ? "Øv setning for setning" : "Øv valgt segment"}</h3>
@@ -1800,28 +1818,11 @@ export default function Home() {
         )}
 
         <footer className="bottomBar">
-          {stage.id !== "feedback" ? (
-            <>
-              <button className={isListening ? "recording primary" : "primary"} onClick={toggleListening}>
-                ● {isListening ? "Stopp opptak" : "Start tale"}
-              </button>
-              <button className="ghostButton" onClick={analyze} disabled={isLoading}>
-                {isLoading ? "Analyserer..." : "Analyser"}
-              </button>
-              <input
-                aria-label="Transkripsjon"
-                value={transcript}
-                onChange={(event) => setTranscript(event.target.value)}
-                placeholder={
-                  stage.id === "reference"
-                    ? "Etter lytting: les hele referanseteksten med egen stemme. Transkripsjonen vises her."
-                    : "Transkripsjonen vises her. Du kan også skrive manuelt under testing."
-                }
-              />
-            </>
-          ) : (
-            <span className="bottomHint">Dagens oppsummering er klar.</span>
-          )}
+          <span className="bottomHint">
+            {stage.id === "feedback"
+              ? "Dagens oppsummering er klar."
+              : "Opptak og STT ligger rett under teksten du øver på."}
+          </span>
           {stageIndex < stages.length - 1 ? (
             <button className="nextButton" onClick={nextStage}>
               Neste øvelse →
