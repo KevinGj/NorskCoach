@@ -711,17 +711,7 @@ function AudioStudyPanel({
         </div>
       </div>
 
-      <div
-        ref={timelineRef}
-        className="analysisPanel"
-        onPointerDown={(event) => {
-          event.currentTarget.setPointerCapture(event.pointerId);
-          scrubFromPointer(event.clientX);
-        }}
-        onPointerMove={(event) => {
-          if (event.buttons === 1) scrubFromPointer(event.clientX);
-        }}
-      >
+      <div className="analysisPanel">
         <button
           className="graphPlayButton"
           onClick={isPlaying ? onPause : onPlayToggle}
@@ -730,6 +720,17 @@ function AudioStudyPanel({
         >
           {isPlaying ? "Pause" : "▶ Play"}
         </button>
+        <div
+          ref={timelineRef}
+          className="analysisTrackArea"
+          onPointerDown={(event) => {
+            event.currentTarget.setPointerCapture(event.pointerId);
+            scrubFromPointer(event.clientX);
+          }}
+          onPointerMove={(event) => {
+            if (event.buttons === 1) scrubFromPointer(event.clientX);
+          }}
+        >
         <div className="playhead" style={{ left: `${playheadPercent}%` }} />
         <div className="waveform" aria-label="Waveform for valgt setning">
           {columns.map((height, index) => (
@@ -773,6 +774,7 @@ function AudioStudyPanel({
         <div className="timeReadout">
           <span>{currentTime.toFixed(1)}s</span>
           <span>{duration.toFixed(1)}s</span>
+        </div>
         </div>
       </div>
 

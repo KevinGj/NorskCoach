@@ -350,11 +350,15 @@ h1 em {
   background: #07120d;
   border: 1px solid #1a7e5b;
   border-radius: 16px;
-  cursor: ew-resize;
   overflow: hidden;
   padding: 28px 24px 16px;
   position: relative;
   user-select: none;
+}
+
+.analysisTrackArea {
+  cursor: ew-resize;
+  position: relative;
 }
 
 .graphPlayButton {
@@ -383,11 +387,11 @@ h1 em {
 
 .playhead {
   background: var(--accent);
-  bottom: 86px;
+  bottom: 34px;
   box-shadow: 0 0 34px rgba(53, 224, 164, 0.6);
   pointer-events: none;
   position: absolute;
-  top: 135px;
+  top: 0;
   width: 2px;
   z-index: 5;
 }
