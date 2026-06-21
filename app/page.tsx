@@ -660,8 +660,8 @@ function AudioStudyPanel({
   const analyzedPitchHz = sliceTimeline(nativeAnalysis?.pitchHz ?? [], nativeAnalysis, analysisStart, analysisEnd);
   const columns = resampleNumbers(analyzedWaveform, 108, fallbackColumns);
   const spectralColumns = resampleSpectrogram(analyzedSpectrogram, 82, fallbackSpectralColumns);
-  const nativePitch = resamplePitch(analyzedPitch, 72, modeledPitch);
-  const nativePitchHz = resamplePitch(analyzedPitchHz, 72, []);
+  const nativePitch = resamplePitch(analyzedPitch, 180, modeledPitch);
+  const nativePitchHz = resamplePitch(analyzedPitchHz, 180, []);
   const hasRealAnalysis = Boolean(nativeAnalysis && analyzedWaveform.length && analyzedSpectrogram.length);
   const nativePitchSegments = pointsToPolylineSegments(nativePitch);
   const studentPolyline = pointsToPolyline(studentPitch);
@@ -705,9 +705,6 @@ function AudioStudyPanel({
           </span>
         </div>
         <div className="analysisActions">
-          <button className="ghostButton" onClick={onPlayToggle}>
-            {isPlaying ? "Pause" : "▶ Spill setning"}
-          </button>
           <button className={isStudentListening ? "recording ghostButton" : "ghostButton activeGhost"} onClick={onToggleStudent}>
             ● {isStudentListening ? "Stopp pitch" : "Mål min pitch"}
           </button>
