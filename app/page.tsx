@@ -975,6 +975,8 @@ export default function Home() {
   const [studentPitch, setStudentPitch] = useState<PitchPoint[]>([]);
   const [isStudentListening, setIsStudentListening] = useState(false);
   const [transcript, setTranscript] = useState("");
+  const [userRecordingUrl, setUserRecordingUrl] = useState("");
+  const [isUserPlaybackPlaying, setIsUserPlaybackPlaying] = useState(false);
   const [feedback, setFeedback] = useState<CoachFeedback | null>(null);
   const [analysisMessage, setAnalysisMessage] = useState("");
   const [profile, setProfile] = useState<LearnerProfile>(emptyProfile);
@@ -984,6 +986,11 @@ export default function Home() {
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
+  const userAudioRef = useRef<HTMLAudioElement | null>(null);
+  const userRecordingUrlRef = useRef<string | null>(null);
+  const speechRecorderRef = useRef<MediaRecorder | null>(null);
+  const speechStreamRef = useRef<MediaStream | null>(null);
+  const speechChunksRef = useRef<Blob[]>([]);
   const analysisContextRef = useRef<AudioContext | null>(null);
   const micContextRef = useRef<AudioContext | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
@@ -1150,7 +1157,11 @@ export default function Home() {
   useEffect(() => {
     return () => {
       audioRef.current?.pause();
+      userAudioRef.current?.pause();
       if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+      if (userRecordingUrlRef.current) URL.revokeObjectURL(userRecordingUrlRef.current);
+      if (speechRecorderRef.current?.state === "recording") speechRecorderRef.current.stop();
+      speechStreamRef.current?.getTracks().forEach((track) => track.stop());
       void analysisContextRef.current?.close();
       micStreamRef.current?.getTracks().forEach((track) => track.stop());
       if (micIntervalRef.current) window.clearInterval(micIntervalRef.current);
@@ -1163,6 +1174,56 @@ export default function Home() {
     window.speechSynthesis?.cancel();
     playbackStopAtRef.current = null;
     setIsAudioPlaying(false);
+  };
+
+  const stopSpeechCapture = () => {
+    const recognition = recognitionRef.current;
+    recognitionRef.current = null;
+    try {
+      recognition?.stop();
+    } catch {
+      // Recognition can already be ended by the browser.
+    }
+    if (speechRecorderRef.current?.state === "recording") {
+      speechRecorderRef.current.stop();
+    }
+    speechStreamRef.current?.getTracks().forEach((track) => track.stop());
+    speechStreamRef.current = null;
+    setIsListening(false);
+  };
+
+  const startSpeechRecording = async () => {
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+      setAnalysisMessage("Nettleseren kan ikke ta opp lyd her. STT kan fortsatt fungere.");
+      return;
+    }
+
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    speechStreamRef.current = stream;
+    speechChunksRef.current = [];
+
+    if (userRecordingUrlRef.current) URL.revokeObjectURL(userRecordingUrlRef.current);
+    userRecordingUrlRef.current = null;
+    setUserRecordingUrl("");
+    setIsUserPlaybackPlaying(false);
+
+    const recorder = new MediaRecorder(stream);
+    speechRecorderRef.current = recorder;
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) speechChunksRef.current.push(event.data);
+    };
+    recorder.onstop = () => {
+      const blob = new Blob(speechChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+      if (blob.size > 0) {
+        const url = URL.createObjectURL(blob);
+        userRecordingUrlRef.current = url;
+        setUserRecordingUrl(url);
+      }
+      speechStreamRef.current?.getTracks().forEach((track) => track.stop());
+      speechStreamRef.current = null;
+      speechRecorderRef.current = null;
+    };
+    recorder.start();
   };
 
   const pauseReferenceAudio = () => {
@@ -1413,37 +1474,68 @@ export default function Home() {
     void playGoogleSpeech(prompt, stage.id === "shadowing" ? 0.9 : 0.96);
   };
 
-  const toggleListening = () => {
+  const toggleListening = async () => {
     setAnalysisMessage("");
-    const Recognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
-    if (!Recognition) {
-      setTranscript((current) => current || "Nettleseren din støtter ikke talegjenkjenning. Skriv svaret ditt her.");
-      return;
-    }
-
     if (isListening) {
-      recognitionRef.current?.stop();
-      setIsListening(false);
+      stopSpeechCapture();
       return;
     }
 
-    const recognition = new Recognition();
-    recognition.lang = "nb-NO";
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.onresult = (event) => {
-      let text = "";
-      for (let index = 0; index < event.results.length; index += 1) {
-        text += event.results[index][0].transcript;
-      }
-      setTranscript(text.trim());
-    };
-    recognition.onend = () => setIsListening(false);
-    recognitionRef.current = recognition;
+    try {
+      await startSpeechRecording();
+    } catch {
+      setAnalysisMessage("Fikk ikke tilgang til mikrofonen.");
+      return;
+    }
+
+    const Recognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+    if (Recognition) {
+      const recognition = new Recognition();
+      recognition.lang = "nb-NO";
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.onresult = (event) => {
+        let text = "";
+        for (let index = 0; index < event.results.length; index += 1) {
+          text += event.results[index][0].transcript;
+        }
+        setTranscript(text.trim());
+      };
+      recognition.onend = () => {
+        if (speechRecorderRef.current?.state === "recording") stopSpeechCapture();
+      };
+      recognitionRef.current = recognition;
+      recognition.start();
+    } else {
+      setAnalysisMessage("Nettleseren støtter ikke STT her, men opptaket lagres for avspilling.");
+    }
+
     setIsListening(true);
-    recognition.start();
   };
 
+  const playUserRecording = () => {
+    if (!userRecordingUrl) return;
+    if (isUserPlaybackPlaying) {
+      userAudioRef.current?.pause();
+      setIsUserPlaybackPlaying(false);
+      return;
+    }
+    userAudioRef.current?.pause();
+    const audio = new Audio(userRecordingUrl);
+    userAudioRef.current = audio;
+    audio.onended = () => setIsUserPlaybackPlaying(false);
+    audio.onpause = () => setIsUserPlaybackPlaying(false);
+    audio.onplay = () => setIsUserPlaybackPlaying(true);
+    void audio.play();
+  };
+
+  const clearUserRecording = () => {
+    userAudioRef.current?.pause();
+    setIsUserPlaybackPlaying(false);
+    if (userRecordingUrlRef.current) URL.revokeObjectURL(userRecordingUrlRef.current);
+    userRecordingUrlRef.current = null;
+    setUserRecordingUrl("");
+  };
   const analyze = async () => {
     if (stage.id === "feedback") return;
     if (!transcript.trim()) {
@@ -1481,6 +1573,7 @@ export default function Home() {
     setTranscript("");
     setFeedback(null);
     setAnalysisMessage("");
+    clearUserRecording();
     stopAudio();
     stopStudentPitch();
   };
@@ -1498,6 +1591,7 @@ export default function Home() {
     setTranscript("");
     setFeedback(null);
     setAnalysisMessage("");
+    clearUserRecording();
   };
 
   const strengths = profile.strengths.length ? profile.strengths : ["God vilje til å holde samtalen på norsk", "Du svarer tydelig og konsist", "Tydelig artikulasjon"];
@@ -1635,12 +1729,16 @@ export default function Home() {
                       <button className="ghostButton" onClick={analyze} disabled={isLoading}>
                         {isLoading ? "Analyserer..." : "Analyser"}
                       </button>
+                      <button className="ghostButton" onClick={playUserRecording} disabled={!userRecordingUrl}>
+                        {isUserPlaybackPlaying ? "Pause mitt opptak" : "Spill mitt opptak"}
+                      </button>
                     </div>
-                    <input
+                    <textarea
                       aria-label="Transkripsjon"
                       value={transcript}
                       onChange={(event) => setTranscript(event.target.value)}
                       placeholder="STT-transkripsjonen vises her. Den kan inneholde feil i ord og tegnsetting."
+                      rows={4}
                     />
                     {analysisMessage && <p className="analysisMessage">{analysisMessage}</p>}
                   </div>
@@ -1785,12 +1883,16 @@ export default function Home() {
                     <button className="ghostButton" onClick={analyze} disabled={isLoading}>
                       {isLoading ? "Analyserer..." : "Analyser"}
                     </button>
+                    <button className="ghostButton" onClick={playUserRecording} disabled={!userRecordingUrl}>
+                      {isUserPlaybackPlaying ? "Pause mitt opptak" : "Spill mitt opptak"}
+                    </button>
                   </div>
-                  <input
+                  <textarea
                     aria-label="Transkripsjon"
                     value={transcript}
                     onChange={(event) => setTranscript(event.target.value)}
                     placeholder="STT-transkripsjonen vises her. Den kan inneholde feil i ord og tegnsetting."
+                    rows={4}
                   />
                   {analysisMessage && <p className="analysisMessage">{analysisMessage}</p>}
                 </div>

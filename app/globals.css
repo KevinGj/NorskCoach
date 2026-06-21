@@ -363,6 +363,14 @@ h1 em {
   color: var(--accent);
 }
 
+.ghostButton:disabled,
+.primary:disabled,
+.playButton:disabled,
+.nextButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
 .analysisPanel {
   background: #07120d;
   border: 1px solid #1a7e5b;
@@ -1028,15 +1036,18 @@ h1 em {
   gap: 10px;
 }
 
-.practiceInput input {
+.practiceInput textarea {
   background: #050d0a;
   border: 1px solid #243b32;
   border-radius: 9px;
   color: var(--ink);
-  min-height: 42px;
+  min-height: 104px;
   outline: none;
-  padding: 0 14px;
+  padding: 12px 14px;
+  resize: vertical;
   width: 100%;
+  white-space: pre-wrap;
+  word-break: normal;
 }
 
 .analysisMessage {
