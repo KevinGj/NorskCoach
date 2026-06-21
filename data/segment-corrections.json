@@ -1,5 +1,11 @@
 {
   "01-track-01-02": {
-    "text": "da de var kommet midt ut på vannet skjønte han plutselig hva slags passasjer han hadde tatt med seg i båten blek og Redd hva han for sitt liv. Pesta svarte at det kom an på om man sto nedskrevet i boka hennes hun bladde i boka og der fant hun navnet hans"
+    "text": "da de var kommet midt ut på vannet skjønte han plutselig hva slags passasjer han hadde tatt med seg i båten blek og Redd hva han for sitt liv. Pesta svarte at det kom an på om man sto nedskrevet i boka hennes hun bladde i boka og der fant hun navnet hans",
+    "tokenMerges": [
+      {
+        "match": ["test", "av"],
+        "text": "Pesta"
+      }
+    ]
   }
 }

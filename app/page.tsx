@@ -53,6 +53,14 @@ type TimedWord = {
   end: number;
 };
 
+type TimelineToken = {
+  type: "word" | "pause";
+  text: string;
+  start: number;
+  end: number;
+  index: number;
+};
+
 type AudioSegment = {
   id: string;
   source: string;
@@ -64,6 +72,7 @@ type AudioSegment = {
   utteranceCount: number;
   text: string;
   words?: TimedWord[];
+  tokens?: TimelineToken[];
 };
 
 type VoiceOption = {
@@ -610,7 +619,7 @@ function AudioStudyPanel({
   currentTime,
   duration,
   activeSentence,
-  timedWords,
+  timelineTokens,
   transcript,
   sentenceIndex,
   nativeAnalysis,
@@ -629,7 +638,7 @@ function AudioStudyPanel({
   currentTime: number;
   duration: number;
   activeSentence: string;
-  timedWords: TimedWord[];
+  timelineTokens: TimelineToken[];
   transcript: string;
   sentenceIndex: number;
   nativeAnalysis: AudioAnalysis | null;
@@ -684,9 +693,11 @@ function AudioStudyPanel({
   const vowelY = latestStudent ? Math.max(18, Math.min(82, 36 + Math.sin(latestStudent / 11) * 24)) : 60;
   const wordScores = scoreTranscriptWords(activeSentence, transcript);
   const activeGlobalTime = analysisStart + currentTime;
-  const visibleTimedWords = timedWords.filter((word) => word.end >= analysisStart - 0.05 && word.start <= analysisEnd + 0.05);
-  const activeTimedWordIndex = visibleTimedWords.findIndex(
-    (word) => activeGlobalTime >= word.start - 0.03 && activeGlobalTime <= word.end + 0.08
+  const visibleWordTokens = timelineTokens.filter(
+    (token) => token.type === "word" && token.end >= analysisStart - 0.05 && token.start <= analysisEnd + 0.05
+  );
+  const activeWordIndex = visibleWordTokens.findIndex(
+    (token) => activeGlobalTime >= token.start - 0.03 && activeGlobalTime <= token.end + 0.08
   );
   const varianceZones = buildVarianceZones(nativePitch, studentPitch);
   const vowelDistance = latestStudent ? Math.abs(vowelX - 50) + Math.abs(vowelY - 50) : 0;
@@ -798,7 +809,7 @@ function AudioStudyPanel({
           <p>Aktiv setning · {currentTime.toFixed(1)}-{duration.toFixed(1)}s</p>
           <strong>
             {wordScores.map((score, index) => (
-              <mark className={`wordMark ${score.severity} ${index === activeTimedWordIndex ? "playing" : ""}`} key={`${score.word}-${index}`}>
+              <mark className={`wordMark ${score.severity} ${index === activeWordIndex ? "playing" : ""}`} key={`${score.word}-${index}`}>
                 {score.word}
               </mark>
             ))}
@@ -1391,7 +1402,7 @@ export default function Home() {
                 currentTime={selectedSentenceTime}
                 duration={selectedSentenceDuration}
                 activeSentence={selectedSegment.sentence}
-                timedWords={selectedAudioSegment.words ?? []}
+                timelineTokens={selectedAudioSegment.tokens ?? []}
                 transcript={transcript}
                 sentenceIndex={selectedSentence}
                 nativeAnalysis={nativeAnalysis}
