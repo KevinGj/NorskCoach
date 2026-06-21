@@ -212,11 +212,96 @@ function makeSegments(sentences: string[]): Segment[] {
   });
 }
 
+function splitSentenceText(text: string) {
+  return text.match(/[^.!?]+(?:[.!?]+|$)/g)?.map((sentence) => sentence.trim()).filter(Boolean) ?? [];
+}
+
+function normalizeTimelineText(value: string) {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+function wordsFromText(text: string) {
+  return text
+    .split(/\s+/)
+    .map(normalizeTimelineText)
+    .filter(Boolean);
+}
+
+function findBestTokenRange(sentenceWords: string[], wordTokens: TimelineToken[], cursor: number) {
+  if (!sentenceWords.length || !wordTokens.length) return null;
+  const expectedStart = Math.min(cursor, wordTokens.length - 1);
+  const windowStart = Math.max(0, expectedStart - 5);
+  const windowEnd = Math.min(wordTokens.length - 1, expectedStart + 7);
+  let best: { startIndex: number; endIndex: number; score: number } | null = null;
+
+  for (let startIndex = windowStart; startIndex <= windowEnd; startIndex += 1) {
+    const availableCount = wordTokens.length - startIndex;
+    const compareCount = Math.min(sentenceWords.length, availableCount);
+    if (!compareCount) continue;
+
+    let matches = 0;
+    for (let offset = 0; offset < compareCount; offset += 1) {
+      if (normalizeTimelineText(wordTokens[startIndex + offset].text) === sentenceWords[offset]) {
+        matches += 1;
+      }
+    }
+
+    const score = matches / Math.max(sentenceWords.length, 1);
+    const candidate = {
+      startIndex,
+      endIndex: Math.min(wordTokens.length - 1, startIndex + sentenceWords.length - 1),
+      score
+    };
+
+    if (!best || candidate.score > best.score || (candidate.score === best.score && Math.abs(candidate.startIndex - expectedStart) < Math.abs(best.startIndex - expectedStart))) {
+      best = candidate;
+    }
+  }
+
+  if (best && best.score >= 0.28) return best;
+  return {
+    startIndex: expectedStart,
+    endIndex: Math.min(wordTokens.length - 1, expectedStart + sentenceWords.length - 1),
+    score: 0
+  };
+}
+
 function makeSegmentsForAudio(segment: AudioSegment): Segment[] {
-  const sentenceTexts = segment.text.match(/[^.!?]+(?:[.!?]+|$)/g)?.map((sentence) => sentence.trim()).filter(Boolean) ?? [];
+  const sentenceTexts = splitSentenceText(segment.text);
   if (sentenceTexts.length < 2) {
     return [{ sentence: segment.text, start: 0, end: segment.duration }];
   }
+
+  const wordTokens = segment.tokens?.filter((token) => token.type === "word").sort((a, b) => a.start - b.start) ?? [];
+  if (wordTokens.length) {
+    let cursor = 0;
+    const tokenSegments = sentenceTexts.map((sentence, index) => {
+      const sentenceWords = wordsFromText(sentence);
+      const range = findBestTokenRange(sentenceWords, wordTokens, cursor);
+      if (!range) return null;
+
+      const nextSentenceWords = wordsFromText(sentenceTexts[index + 1] ?? "");
+      const nextRange = nextSentenceWords.length ? findBestTokenRange(nextSentenceWords, wordTokens, range.endIndex + 1) : null;
+      const rawStart = wordTokens[range.startIndex]?.start ?? 0;
+      const rawEnd = wordTokens[range.endIndex]?.end ?? rawStart + 2;
+      const nextStart = nextRange ? wordTokens[nextRange.startIndex]?.start : segment.duration;
+      const startPad = index === 0 ? 0 : 0.28;
+      const endPad = index === sentenceTexts.length - 1 ? 0.22 : 0.36;
+      const start = Math.max(0, rawStart - startPad);
+      const endLimit = Math.max(start + 0.4, Math.min(segment.duration, nextStart - 0.04));
+      const end = Math.min(endLimit, Math.max(start + 0.4, rawEnd + endPad));
+
+      cursor = Math.max(range.endIndex + 1, cursor + sentenceWords.length);
+      return { sentence, start, end };
+    });
+
+    if (tokenSegments.every(Boolean)) return tokenSegments as Segment[];
+  }
+
   const timed = makeSegments(sentenceTexts);
   const timedDuration = Math.max(...timed.map((sentence) => sentence.end));
   return timed.map((sentence) => ({
@@ -927,7 +1012,7 @@ export default function Home() {
   const selectedSentenceDuration = selectedSegment.end - selectedSegment.start;
   const selectedSentenceTime = Math.min(selectedSentenceDuration, Math.max(0, referenceTime - selectedSegment.start));
   const segmentAtReferenceTime = (time: number) =>
-    activeReferenceSegments.find((segment) => time >= segment.start && time <= segment.end) ?? activeReferenceSegments[0];
+    activeReferenceSegments.filter((segment) => time >= segment.start && time <= segment.end).at(-1) ?? activeReferenceSegments[0];
   const prompt = useMemo(() => {
     if (stage.id === "reference") return selectedAudioSegment.text;
     if (stage.id === "shadowing") return shadowingLines[entries.length % shadowingLines.length];
