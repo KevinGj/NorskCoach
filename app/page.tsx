@@ -51,6 +51,7 @@ type AudioSegment = {
   id: string;
   source: string;
   audio: string;
+  analysis?: string;
   start: number;
   end: number;
   duration: number;
@@ -607,6 +608,7 @@ function AudioStudyPanel({
   nativeAnalysis,
   analysisStart,
   analysisEnd,
+  analysisEngine,
   isAnalyzingAudio,
   studentPitch,
   isStudentListening,
@@ -624,6 +626,7 @@ function AudioStudyPanel({
   nativeAnalysis: AudioAnalysis | null;
   analysisStart: number;
   analysisEnd: number;
+  analysisEngine: string;
   isAnalyzingAudio: boolean;
   studentPitch: PitchPoint[];
   isStudentListening: boolean;
@@ -692,7 +695,13 @@ function AudioStudyPanel({
           <p>Setningsanalyse · Tid · Frekvens · Amplitude</p>
           <h2>Se melodien i stemmen</h2>
           <span className={hasRealAnalysis ? "analysisStatus ready" : "analysisStatus"}>
-            {isAnalyzingAudio ? "Analyserer lyd..." : hasRealAnalysis ? "Ekte audioanalyse" : "Modellert forhåndsvisning"}
+            {isAnalyzingAudio
+              ? "Analyserer lyd..."
+              : hasRealAnalysis
+                ? analysisEngine === "praat-parselmouth"
+                  ? "Praat audioanalyse"
+                  : "Ekte audioanalyse"
+                : "Modellert forhåndsvisning"}
           </span>
         </div>
         <div className="analysisActions">
@@ -847,6 +856,7 @@ export default function Home() {
   const [isSpeechLoading, setIsSpeechLoading] = useState(false);
   const [nativeAnalysis, setNativeAnalysis] = useState<AudioAnalysis | null>(null);
   const [isAnalyzingAudio, setIsAnalyzingAudio] = useState(false);
+  const [analysisEngine, setAnalysisEngine] = useState("");
   const [studentPitch, setStudentPitch] = useState<PitchPoint[]>([]);
   const [isStudentListening, setIsStudentListening] = useState(false);
   const [transcript, setTranscript] = useState("");
@@ -929,15 +939,34 @@ export default function Home() {
 
     if (!selectedAudioSegment.audio) {
       setNativeAnalysis(null);
+      setAnalysisEngine("");
       setIsAnalyzingAudio(false);
       return () => {
         cancelled = true;
       };
     }
 
+    const loadStoredAnalysis = async () => {
+      if (!selectedAudioSegment.analysis) return null;
+      const response = await fetch(selectedAudioSegment.analysis);
+      if (!response.ok) return null;
+      const analysis = (await response.json()) as AudioAnalysis & { engine?: string };
+      if (!analysis.waveform?.length || !analysis.spectrogram?.length || !analysis.pitch?.length) return null;
+      return analysis;
+    };
+
     const analyzeSelectedAudio = async () => {
       setIsAnalyzingAudio(true);
       try {
+        const storedAnalysis = await loadStoredAnalysis();
+        if (storedAnalysis) {
+          if (!cancelled) {
+            setNativeAnalysis(storedAnalysis);
+            setAnalysisEngine(storedAnalysis.engine ?? "offline");
+          }
+          return;
+        }
+
         const response = await fetch(selectedAudioSegment.audio);
         if (!response.ok) throw new Error("Could not load reference audio.");
         const encodedAudio = await response.arrayBuffer();
@@ -945,10 +974,16 @@ export default function Home() {
         analysisContextRef.current = context;
         const decodedAudio = await context.decodeAudioData(encodedAudio.slice(0));
         const analysis = analyzeAudioBuffer(decodedAudio);
-        if (!cancelled) setNativeAnalysis(analysis);
+        if (!cancelled) {
+          setNativeAnalysis(analysis);
+          setAnalysisEngine("browser");
+        }
       } catch (error) {
         console.warn("Audio analysis failed, using modeled preview.", error);
-        if (!cancelled) setNativeAnalysis(null);
+        if (!cancelled) {
+          setNativeAnalysis(null);
+          setAnalysisEngine("");
+        }
       } finally {
         if (!cancelled) setIsAnalyzingAudio(false);
       }
@@ -959,7 +994,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [selectedAudioSegment.audio]);
+  }, [selectedAudioSegment.analysis, selectedAudioSegment.audio]);
 
   useEffect(() => {
     localStorage.setItem("norsk-coach-profile", JSON.stringify(profile));
@@ -1347,6 +1382,7 @@ export default function Home() {
                 nativeAnalysis={nativeAnalysis}
                 analysisStart={selectedSegment.start}
                 analysisEnd={selectedSegment.end}
+                analysisEngine={analysisEngine}
                 isAnalyzingAudio={isAnalyzingAudio}
                 studentPitch={studentPitch}
                 isStudentListening={isStudentListening}

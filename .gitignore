@@ -1,5 +1,6 @@
 # dependencies
 node_modules
+.venv
 
 # next.js
 .next
@@ -32,3 +33,4 @@ data/audio-segments.json
 data/segment-review.html
 data/transcripts/
 data/tmp-audio/
+public/analysis/

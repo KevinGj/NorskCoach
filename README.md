@@ -71,6 +71,35 @@ GOOGLE_SERVICE_ACCOUNT_JSON
 
 The app defaults to Norwegian Bokmål Chirp3 HD voice `nb-NO-Chirp3-HD-Aoede` and includes a small voice selector for auditioning other Norwegian voices.
 
+## Local Audio Library Processing
+
+Reference clips are generated from local textbook audio and can now be analyzed locally with Praat/Parselmouth. The browser UI should be treated as the training surface; serious speech analysis happens offline and is stored as JSON for each segment.
+
+Current pipeline:
+
+1. Put source audio in `NorskAudio/`.
+2. Run STT segmentation:
+
+```bash
+npm run segment:audio
+```
+
+3. Set up the local Python analysis environment once:
+
+```bash
+npm run setup:audio-analysis
+```
+
+4. Generate Praat/Parselmouth analysis JSON:
+
+```bash
+npm run analyze:audio
+```
+
+This writes per-segment analysis files under `public/analysis/norsk-segments/` and updates `data/audio-segments.json` with an `analysis` URL for each segment. These generated library artifacts are intentionally ignored by Git, just like the source audio and generated segment clips.
+
+The analysis JSON includes waveform, learner-friendly spectrogram bands, raw pitch Hz, smoothed melody Hz, normalized pitch coordinates, intensity, and F1/F2 formants. The app prefers this offline analysis when present and falls back to browser analysis only for unprocessed clips.
+
 ## Project Structure
 
 ```text
@@ -81,6 +110,9 @@ app/
   page.tsx             Main coaching experience
 lib/
   coach.ts             Heuristic speech analysis and learner profile logic
+scripts/
+  segment-audio.mjs    STT and segment generation
+  analyze-audio.py     Local Praat/Parselmouth speech analysis
 ```
 
 ## Repository

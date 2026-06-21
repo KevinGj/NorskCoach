@@ -8,7 +8,10 @@
     "start": "next start",
     "lint": "eslint .",
     "segment:audio": "node scripts/segment-audio.mjs",
-    "segment:review": "node scripts/build-segment-review.mjs"
+    "segment:review": "node scripts/build-segment-review.mjs",
+    "setup:audio-analysis": "py -3 -m venv .venv && .venv\\Scripts\\python.exe -m pip install -r requirements-audio.txt",
+    "analyze:audio": ".venv\\Scripts\\python.exe scripts/analyze-audio.py",
+    "analyze:audio:force": ".venv\\Scripts\\python.exe scripts/analyze-audio.py --force"
   },
   "dependencies": {
     "@google-cloud/speech": "^7.4.0",
