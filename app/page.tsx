@@ -70,6 +70,7 @@ type AudioAnalysis = {
   waveform: number[];
   spectrogram: number[][];
   pitch: PitchPoint[];
+  pitchHz: (number | null)[];
 };
 
 type Severity = "good" | "yellow" | "red";
@@ -287,24 +288,79 @@ function analyzeSpectrogram(samples: Float32Array, sampleRate: number, columns =
   return raw.map((column) => column.map((value) => Math.max(0, Math.min(1, value / max))));
 }
 
-function analyzePitch(samples: Float32Array, sampleRate: number, points = 140): PitchPoint[] {
-  const frameSize = Math.min(4096, Math.max(2048, 2 ** Math.floor(Math.log2(samples.length / Math.max(points * 0.7, 1)))));
+function percentile(values: number[], ratio: number) {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.max(0, Math.floor((sorted.length - 1) * ratio)))] ?? 0;
+}
+
+function stabilizePitchHz(values: (number | null)[]) {
+  const stabilized: (number | null)[] = [];
+  let previous: number | null = null;
+
+  values.forEach((value) => {
+    if (!value) {
+      stabilized.push(null);
+      return;
+    }
+
+    let pitch = value;
+    if (previous) {
+      while (pitch > previous * 1.65 && pitch / 2 >= 70) pitch /= 2;
+      while (pitch < previous / 1.65 && pitch * 2 <= 450) pitch *= 2;
+    }
+    previous = pitch;
+    stabilized.push(pitch);
+  });
+
+  return stabilized.map((value, index) => {
+    if (!value) return null;
+    const window = stabilized
+      .slice(Math.max(0, index - 1), Math.min(stabilized.length, index + 2))
+      .filter((pitch): pitch is number => Boolean(pitch))
+      .sort((a, b) => a - b);
+    return window[Math.floor(window.length / 2)] ?? value;
+  });
+}
+
+function normalizePitchSeriesToLane(values: (number | null)[]) {
+  const voiced = values.filter((pitch): pitch is number => Boolean(pitch));
+  if (!voiced.length) return values.map(() => null);
+  const low = Math.max(70, percentile(voiced, 0.08));
+  const high = Math.min(450, Math.max(low + 12, percentile(voiced, 0.92)));
+  const lowLog = Math.log2(low);
+  const range = Math.max(0.08, Math.log2(high) - lowLog);
+
+  return values.map((pitch) => {
+    if (!pitch) return null;
+    const normalized = (Math.log2(Math.max(low, Math.min(high, pitch))) - lowLog) / range;
+    return Math.max(18, Math.min(82, 82 - normalized * 64));
+  });
+}
+
+function analyzePitch(samples: Float32Array, sampleRate: number, points = 160) {
+  const frameSize = Math.min(3072, Math.max(2048, 2 ** Math.floor(Math.log2(samples.length / Math.max(points, 1)))));
   const raw = Array.from({ length: points }, (_, index) => {
     const center = ((index + 0.5) / points) * samples.length;
     const frame = getFrame(samples, center, frameSize);
     return detectPitch(frame, sampleRate);
   });
-  const voiced = raw.filter((pitch): pitch is number => Boolean(pitch));
-  return raw.map((pitch) => normalizePitchToLane(pitch, voiced));
+  const pitchHz = stabilizePitchHz(raw);
+  return {
+    pitch: normalizePitchSeriesToLane(pitchHz),
+    pitchHz
+  };
 }
 
 function analyzeAudioBuffer(buffer: AudioBuffer): AudioAnalysis {
   const samples = downmixToMono(buffer);
+  const pitchAnalysis = analyzePitch(samples, buffer.sampleRate);
   return {
     duration: buffer.duration,
     waveform: analyzeWaveform(samples),
     spectrogram: analyzeSpectrogram(samples, buffer.sampleRate),
-    pitch: analyzePitch(samples, buffer.sampleRate)
+    pitch: pitchAnalysis.pitch,
+    pitchHz: pitchAnalysis.pitchHz
   };
 }
 
@@ -350,28 +406,65 @@ function pointsToPolyline(points: PitchPoint[]) {
     .join(" ");
 }
 
-function detectPitch(buffer: Float32Array, sampleRate: number) {
-  const rms = Math.sqrt(buffer.reduce((sum, sample) => sum + sample * sample, 0) / buffer.length);
-  if (rms < 0.018) return null;
+function pointsToPolylineSegments(points: PitchPoint[]) {
+  const segments: string[] = [];
+  let current: string[] = [];
 
-  let bestOffset = -1;
-  let bestCorrelation = 0;
-  const minOffset = Math.floor(sampleRate / 420);
-  const maxOffset = Math.floor(sampleRate / 75);
-
-  for (let offset = minOffset; offset <= maxOffset; offset += 1) {
-    let correlation = 0;
-    for (let index = 0; index < buffer.length - offset; index += 1) {
-      correlation += buffer[index] * buffer[index + offset];
+  points.forEach((point, index) => {
+    if (point === null) {
+      if (current.length) segments.push(current.join(" "));
+      current = [];
+      return;
     }
-    if (correlation > bestCorrelation) {
-      bestCorrelation = correlation;
-      bestOffset = offset;
+    current.push(`${(index / Math.max(1, points.length - 1)) * 100},${point}`);
+  });
+
+  if (current.length) segments.push(current.join(" "));
+  return segments;
+}
+
+function detectPitch(buffer: Float32Array, sampleRate: number) {
+  const rms = frameRms(buffer);
+  if (rms < 0.012) return null;
+
+  const minTau = Math.max(2, Math.floor(sampleRate / 450));
+  const maxTau = Math.min(buffer.length - 2, Math.floor(sampleRate / 70));
+  const difference = new Float32Array(maxTau + 1);
+
+  for (let tau = 1; tau <= maxTau; tau += 1) {
+    let sum = 0;
+    for (let index = 0; index < buffer.length - tau; index += 1) {
+      const delta = buffer[index] - buffer[index + tau];
+      sum += delta * delta;
+    }
+    difference[tau] = sum;
+  }
+
+  let runningTotal = 0;
+  let bestTau = -1;
+  let bestValue = Number.POSITIVE_INFINITY;
+
+  for (let tau = 1; tau <= maxTau; tau += 1) {
+    runningTotal += difference[tau];
+    if (tau < minTau || runningTotal === 0) continue;
+    const clarity = (difference[tau] * tau) / runningTotal;
+    if (clarity < bestValue) {
+      bestValue = clarity;
+      bestTau = tau;
+    }
+    if (clarity < 0.12) {
+      bestTau = tau;
+      bestValue = clarity;
+      break;
     }
   }
 
-  if (bestOffset < 0 || bestCorrelation < 0.01) return null;
-  return sampleRate / bestOffset;
+  if (bestTau < minTau || bestValue > 0.28) return null;
+  const before = difference[bestTau - 1] ?? difference[bestTau];
+  const at = difference[bestTau];
+  const after = difference[bestTau + 1] ?? difference[bestTau];
+  const adjustment = before + after - 2 * at === 0 ? 0 : (before - after) / (2 * (before + after - 2 * at));
+  return sampleRate / (bestTau + Math.max(-0.5, Math.min(0.5, adjustment)));
 }
 
 function normalizePitchToLane(pitch: number | null, samples: number[]) {
@@ -561,12 +654,18 @@ function AudioStudyPanel({
   const analyzedWaveform = sliceTimeline(nativeAnalysis?.waveform ?? [], nativeAnalysis, analysisStart, analysisEnd);
   const analyzedSpectrogram = sliceTimeline(nativeAnalysis?.spectrogram ?? [], nativeAnalysis, analysisStart, analysisEnd);
   const analyzedPitch = sliceTimeline(nativeAnalysis?.pitch ?? [], nativeAnalysis, analysisStart, analysisEnd);
+  const analyzedPitchHz = sliceTimeline(nativeAnalysis?.pitchHz ?? [], nativeAnalysis, analysisStart, analysisEnd);
   const columns = resampleNumbers(analyzedWaveform, 108, fallbackColumns);
   const spectralColumns = resampleSpectrogram(analyzedSpectrogram, 82, fallbackSpectralColumns);
   const nativePitch = resamplePitch(analyzedPitch, 72, modeledPitch);
+  const nativePitchHz = resamplePitch(analyzedPitchHz, 72, []);
   const hasRealAnalysis = Boolean(nativeAnalysis && analyzedWaveform.length && analyzedSpectrogram.length);
-  const nativePolyline = pointsToPolyline(nativePitch);
+  const nativePitchSegments = pointsToPolylineSegments(nativePitch);
   const studentPolyline = pointsToPolyline(studentPitch);
+  const nativeHzValues = nativePitchHz.filter((pitch): pitch is number => Boolean(pitch));
+  const nativeHzLabel = nativeHzValues.length
+    ? `${Math.round(Math.min(...nativeHzValues))}-${Math.round(Math.max(...nativeHzValues))} Hz`
+    : "ingen stabil F0";
   const voicedStudent = studentPitch.filter((point): point is number => point !== null);
   const latestStudent = voicedStudent.at(-1);
   const vowelX = latestStudent ? Math.max(15, Math.min(85, 100 - latestStudent)) : 55;
@@ -640,8 +739,11 @@ function AudioStudyPanel({
             />
           ))}
           <span className="laneLabel">Native</span>
+          <span className="pitchRangeLabel">{nativeHzLabel}</span>
           <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-            <polyline className="nativeLine" points={nativePolyline} />
+            {nativePitchSegments.map((segment, index) => (
+              <polyline className="nativeLine" key={`${segment}-${index}`} points={segment} />
+            ))}
             {studentPolyline && <polyline className="studentLine" points={studentPolyline} />}
           </svg>
           <span className="studentHint">Student · {studentPolyline ? "aktiv kontur" : "venter på opptak"}</span>

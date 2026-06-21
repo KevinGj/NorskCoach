@@ -455,6 +455,7 @@ h1 em {
 }
 
 .laneLabel,
+.pitchRangeLabel,
 .studentHint {
   background: rgba(17, 55, 40, 0.82);
   border-radius: 6px;
@@ -469,6 +470,12 @@ h1 em {
   text-transform: uppercase;
   top: 14px;
   z-index: 3;
+}
+
+.pitchRangeLabel {
+  color: var(--muted);
+  left: auto;
+  right: 16px;
 }
 
 .studentHint {
