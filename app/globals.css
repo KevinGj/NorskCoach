@@ -810,6 +810,11 @@ h1 em {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.libraryFilters label:has(input) {
+  grid-column: 1 / -1;
+  order: -1;
+}
+
 .libraryFilters label {
   color: var(--accent);
   display: grid;
@@ -825,7 +830,29 @@ h1 em {
   gap: 8px;
   max-height: min(420px, 42vh);
   overflow: auto;
-  padding-right: 4px;
+  padding-right: 8px;
+  scrollbar-color: #6b8177 #0a1712;
+  scrollbar-width: thin;
+}
+
+.segmentList::-webkit-scrollbar {
+  width: 10px;
+}
+
+.segmentList::-webkit-scrollbar-track {
+  background: #0a1712;
+  border: 1px solid #172b23;
+  border-radius: 999px;
+}
+
+.segmentList::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #9ab2a6, #5f766c);
+  border: 2px solid #0a1712;
+  border-radius: 999px;
+}
+
+.segmentList::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #c3d5cc, #789086);
 }
 
 .librarySegment {

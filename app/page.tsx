@@ -1665,9 +1665,11 @@ export default function Home() {
                   </select>
                 </label>
               )}
-              <button className="playButton" onClick={speak} disabled={isSpeechLoading}>
-                {isSpeechLoading ? "Henter lyd..." : isAudioPlaying ? "Pause" : "▶ Spill av"}
-              </button>
+              {stage.id !== "reference" && (
+                <button className="playButton" onClick={speak} disabled={isSpeechLoading}>
+                  {isSpeechLoading ? "Henter lyd..." : isAudioPlaying ? "Pause" : "Spill av"}
+                </button>
+              )}
             </div>
 
             {stage.id === "reference" ? (
