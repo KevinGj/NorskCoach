@@ -65,6 +65,13 @@ type VoiceOption = {
 
 type PitchPoint = number | null;
 
+type AudioAnalysis = {
+  duration: number;
+  waveform: number[];
+  spectrogram: number[][];
+  pitch: PitchPoint[];
+};
+
 type Severity = "good" | "yellow" | "red";
 
 type WordScore = {
@@ -209,6 +216,128 @@ function makeNativePitch(sentenceIndex: number, count = 72): PitchPoint[] {
     const syllableLift = Math.sin(progress * Math.PI * (12 + sentenceIndex)) * 5;
     return Math.max(18, Math.min(82, 45 - melody + phraseFall - syllableLift));
   });
+}
+
+function downmixToMono(buffer: AudioBuffer) {
+  const samples = new Float32Array(buffer.length);
+  for (let channel = 0; channel < buffer.numberOfChannels; channel += 1) {
+    const channelData = buffer.getChannelData(channel);
+    for (let index = 0; index < channelData.length; index += 1) {
+      samples[index] += channelData[index] / buffer.numberOfChannels;
+    }
+  }
+  return samples;
+}
+
+function frameRms(samples: Float32Array) {
+  if (!samples.length) return 0;
+  let sum = 0;
+  for (let index = 0; index < samples.length; index += 1) {
+    sum += samples[index] * samples[index];
+  }
+  return Math.sqrt(sum / samples.length);
+}
+
+function getFrame(samples: Float32Array, center: number, size: number) {
+  const start = Math.max(0, Math.min(samples.length - size, Math.round(center - size / 2)));
+  return samples.slice(start, start + size);
+}
+
+function analyzeWaveform(samples: Float32Array, columns = 180) {
+  const values = Array.from({ length: columns }, (_, column) => {
+    const start = Math.floor((column / columns) * samples.length);
+    const end = Math.max(start + 1, Math.floor(((column + 1) / columns) * samples.length));
+    let peak = 0;
+    for (let index = start; index < end; index += 1) {
+      peak = Math.max(peak, Math.abs(samples[index] ?? 0));
+    }
+    return peak;
+  });
+  const max = Math.max(0.01, ...values);
+  return values.map((value) => 12 + (value / max) * 72);
+}
+
+function goertzelMagnitude(frame: Float32Array, sampleRate: number, frequency: number) {
+  const omega = (2 * Math.PI * frequency) / sampleRate;
+  const coeff = 2 * Math.cos(omega);
+  let q0 = 0;
+  let q1 = 0;
+  let q2 = 0;
+
+  for (let index = 0; index < frame.length; index += 1) {
+    const windowed = frame[index] * (0.5 - 0.5 * Math.cos((2 * Math.PI * index) / Math.max(1, frame.length - 1)));
+    q0 = coeff * q1 - q2 + windowed;
+    q2 = q1;
+    q1 = q0;
+  }
+
+  return Math.sqrt(q1 * q1 + q2 * q2 - q1 * q2 * coeff) / frame.length;
+}
+
+function analyzeSpectrogram(samples: Float32Array, sampleRate: number, columns = 140) {
+  const bands = [2800, 2100, 1600, 1200, 900, 650, 450, 300, 160];
+  const frameSize = Math.min(4096, Math.max(1024, 2 ** Math.floor(Math.log2(samples.length / Math.max(columns, 1)))));
+  const raw = Array.from({ length: columns }, (_, column) => {
+    const center = ((column + 0.5) / columns) * samples.length;
+    const frame = getFrame(samples, center, frameSize);
+    const energyGate = Math.min(1, frameRms(frame) / 0.045);
+    return bands.map((band) => Math.log1p(goertzelMagnitude(frame, sampleRate, band) * 90) * energyGate);
+  });
+  const max = Math.max(0.01, ...raw.flat());
+  return raw.map((column) => column.map((value) => Math.max(0, Math.min(1, value / max))));
+}
+
+function analyzePitch(samples: Float32Array, sampleRate: number, points = 140): PitchPoint[] {
+  const frameSize = Math.min(4096, Math.max(2048, 2 ** Math.floor(Math.log2(samples.length / Math.max(points * 0.7, 1)))));
+  const raw = Array.from({ length: points }, (_, index) => {
+    const center = ((index + 0.5) / points) * samples.length;
+    const frame = getFrame(samples, center, frameSize);
+    return detectPitch(frame, sampleRate);
+  });
+  const voiced = raw.filter((pitch): pitch is number => Boolean(pitch));
+  return raw.map((pitch) => normalizePitchToLane(pitch, voiced));
+}
+
+function analyzeAudioBuffer(buffer: AudioBuffer): AudioAnalysis {
+  const samples = downmixToMono(buffer);
+  return {
+    duration: buffer.duration,
+    waveform: analyzeWaveform(samples),
+    spectrogram: analyzeSpectrogram(samples, buffer.sampleRate),
+    pitch: analyzePitch(samples, buffer.sampleRate)
+  };
+}
+
+function resampleNumbers(values: number[], count: number, fallback: number[]) {
+  const source = values.length ? values : fallback;
+  return Array.from({ length: count }, (_, index) => {
+    const sourceIndex = Math.round((index / Math.max(1, count - 1)) * Math.max(0, source.length - 1));
+    return source[sourceIndex] ?? 0;
+  });
+}
+
+function resamplePitch(values: PitchPoint[], count: number, fallback: PitchPoint[]) {
+  const source = values.length ? values : fallback;
+  return Array.from({ length: count }, (_, index) => {
+    const sourceIndex = Math.round((index / Math.max(1, count - 1)) * Math.max(0, source.length - 1));
+    return source[sourceIndex] ?? null;
+  });
+}
+
+function resampleSpectrogram(values: number[][], count: number, fallback: number[][]) {
+  const source = values.length ? values : fallback;
+  return Array.from({ length: count }, (_, index) => {
+    const sourceIndex = Math.round((index / Math.max(1, count - 1)) * Math.max(0, source.length - 1));
+    return source[sourceIndex] ?? Array.from({ length: 9 }, () => 0);
+  });
+}
+
+function sliceTimeline<T>(values: T[], analysis: AudioAnalysis | null, start: number, end: number) {
+  if (!analysis || !values.length) return [];
+  const safeDuration = Math.max(0.1, analysis.duration);
+  const from = Math.floor((Math.max(0, start) / safeDuration) * values.length);
+  const to = Math.ceil((Math.max(start + 0.1, end) / safeDuration) * values.length);
+  return values.slice(Math.max(0, from), Math.min(values.length, Math.max(from + 1, to)));
 }
 
 function pointsToPolyline(points: PitchPoint[]) {
@@ -382,6 +511,10 @@ function AudioStudyPanel({
   activeSentence,
   transcript,
   sentenceIndex,
+  nativeAnalysis,
+  analysisStart,
+  analysisEnd,
+  isAnalyzingAudio,
   studentPitch,
   isStudentListening,
   isPlaying,
@@ -394,6 +527,10 @@ function AudioStudyPanel({
   activeSentence: string;
   transcript: string;
   sentenceIndex: number;
+  nativeAnalysis: AudioAnalysis | null;
+  analysisStart: number;
+  analysisEnd: number;
+  isAnalyzingAudio: boolean;
   studentPitch: PitchPoint[];
   isStudentListening: boolean;
   isPlaying: boolean;
@@ -403,22 +540,29 @@ function AudioStudyPanel({
 }) {
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const playheadPercent = Math.min(100, Math.max(0, (currentTime / duration) * 100));
-  const columns = Array.from({ length: 108 }, (_, index) => {
+  const fallbackColumns = Array.from({ length: 108 }, (_, index) => {
     const progress = index / 107;
     const phrasePulse = Math.sin(progress * Math.PI * 9) * 0.5 + 0.5;
     const wordPulse = Math.sin(progress * Math.PI * 42) * 0.5 + 0.5;
     return 18 + phrasePulse * 34 + wordPulse * 24 + (index % 15 === 0 ? 15 : 0);
   });
-  const spectralColumns = Array.from({ length: 82 }, (_, timeIndex) =>
+  const fallbackSpectralColumns = Array.from({ length: 82 }, (_, timeIndex) =>
     Array.from({ length: 9 }, (_, freqIndex) => {
       const time = timeIndex / 81;
       const freq = freqIndex / 8;
       const slope = 0.2 + time * 0.38 + Math.sin(time * Math.PI * 3) * 0.08;
       const formant = Math.abs(freq - slope) < 0.12 || Math.abs(freq - (slope + 0.22)) < 0.08;
-      return formant && Math.sin(time * Math.PI * 18) > -0.75;
+      return formant && Math.sin(time * Math.PI * 18) > -0.75 ? 0.75 : 0.12;
     })
   );
-  const nativePitch = makeNativePitch(sentenceIndex);
+  const modeledPitch = makeNativePitch(sentenceIndex);
+  const analyzedWaveform = sliceTimeline(nativeAnalysis?.waveform ?? [], nativeAnalysis, analysisStart, analysisEnd);
+  const analyzedSpectrogram = sliceTimeline(nativeAnalysis?.spectrogram ?? [], nativeAnalysis, analysisStart, analysisEnd);
+  const analyzedPitch = sliceTimeline(nativeAnalysis?.pitch ?? [], nativeAnalysis, analysisStart, analysisEnd);
+  const columns = resampleNumbers(analyzedWaveform, 108, fallbackColumns);
+  const spectralColumns = resampleSpectrogram(analyzedSpectrogram, 82, fallbackSpectralColumns);
+  const nativePitch = resamplePitch(analyzedPitch, 72, modeledPitch);
+  const hasRealAnalysis = Boolean(nativeAnalysis && analyzedWaveform.length && analyzedSpectrogram.length);
   const nativePolyline = pointsToPolyline(nativePitch);
   const studentPolyline = pointsToPolyline(studentPitch);
   const voicedStudent = studentPitch.filter((point): point is number => point !== null);
@@ -446,6 +590,9 @@ function AudioStudyPanel({
         <div>
           <p>Setningsanalyse · Tid · Frekvens · Amplitude</p>
           <h2>Se melodien i stemmen</h2>
+          <span className={hasRealAnalysis ? "analysisStatus ready" : "analysisStatus"}>
+            {isAnalyzingAudio ? "Analyserer lyd..." : hasRealAnalysis ? "Ekte audioanalyse" : "Modellert forhåndsvisning"}
+          </span>
         </div>
         <div className="analysisActions">
           <button className="ghostButton" onClick={onPlayToggle}>
@@ -492,8 +639,15 @@ function AudioStudyPanel({
         <div className="spectrogram" aria-label="Learner-friendly spectrogram">
           {spectralColumns.map((column, index) => (
             <div className="spectralColumn" key={index}>
-              {column.map((active, freqIndex) => (
-                <span className={active ? "hot" : ""} key={freqIndex} />
+              {column.map((intensity, freqIndex) => (
+                <span
+                  className={intensity > 0.38 ? "hot" : ""}
+                  key={freqIndex}
+                  style={{
+                    opacity: Math.max(0.22, intensity),
+                    backgroundColor: intensity > 0.18 ? `rgba(235, 196, 67, ${0.16 + intensity * 0.7})` : undefined
+                  }}
+                />
               ))}
             </div>
           ))}
@@ -579,6 +733,8 @@ export default function Home() {
   const [referenceTime, setReferenceTime] = useState(0);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [isSpeechLoading, setIsSpeechLoading] = useState(false);
+  const [nativeAnalysis, setNativeAnalysis] = useState<AudioAnalysis | null>(null);
+  const [isAnalyzingAudio, setIsAnalyzingAudio] = useState(false);
   const [studentPitch, setStudentPitch] = useState<PitchPoint[]>([]);
   const [isStudentListening, setIsStudentListening] = useState(false);
   const [transcript, setTranscript] = useState("");
@@ -590,6 +746,7 @@ export default function Home() {
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
+  const analysisContextRef = useRef<AudioContext | null>(null);
   const micContextRef = useRef<AudioContext | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
   const micIntervalRef = useRef<number | null>(null);
@@ -655,6 +812,43 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
+    if (!selectedAudioSegment.audio) {
+      setNativeAnalysis(null);
+      setIsAnalyzingAudio(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const analyzeSelectedAudio = async () => {
+      setIsAnalyzingAudio(true);
+      try {
+        const response = await fetch(selectedAudioSegment.audio);
+        if (!response.ok) throw new Error("Could not load reference audio.");
+        const encodedAudio = await response.arrayBuffer();
+        const context = analysisContextRef.current ?? new AudioContext();
+        analysisContextRef.current = context;
+        const decodedAudio = await context.decodeAudioData(encodedAudio.slice(0));
+        const analysis = analyzeAudioBuffer(decodedAudio);
+        if (!cancelled) setNativeAnalysis(analysis);
+      } catch (error) {
+        console.warn("Audio analysis failed, using modeled preview.", error);
+        if (!cancelled) setNativeAnalysis(null);
+      } finally {
+        if (!cancelled) setIsAnalyzingAudio(false);
+      }
+    };
+
+    void analyzeSelectedAudio();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedAudioSegment.audio]);
+
+  useEffect(() => {
     localStorage.setItem("norsk-coach-profile", JSON.stringify(profile));
   }, [profile]);
 
@@ -682,6 +876,7 @@ export default function Home() {
     return () => {
       audioRef.current?.pause();
       if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+      void analysisContextRef.current?.close();
       micStreamRef.current?.getTracks().forEach((track) => track.stop());
       if (micIntervalRef.current) window.clearInterval(micIntervalRef.current);
       void micContextRef.current?.close();
@@ -1002,6 +1197,10 @@ export default function Home() {
                 activeSentence={selectedSegment.sentence}
                 transcript={transcript}
                 sentenceIndex={selectedSentence}
+                nativeAnalysis={nativeAnalysis}
+                analysisStart={selectedSegment.start}
+                analysisEnd={selectedSegment.end}
+                isAnalyzingAudio={isAnalyzingAudio}
                 studentPitch={studentPitch}
                 isStudentListening={isStudentListening}
                 isPlaying={isAudioPlaying}

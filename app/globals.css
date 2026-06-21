@@ -293,6 +293,20 @@ h1 em {
   justify-content: flex-end;
 }
 
+.analysisStatus {
+  color: var(--muted);
+  display: inline-block;
+  font-family: "Courier New", monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  margin-top: 8px;
+  text-transform: uppercase;
+}
+
+.analysisStatus.ready {
+  color: var(--accent);
+}
+
 .ghostButton,
 .primary,
 .nextButton,
