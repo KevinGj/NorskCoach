@@ -213,7 +213,7 @@ function makeSegments(sentences: string[]): Segment[] {
 }
 
 function makeSegmentsForAudio(segment: AudioSegment): Segment[] {
-  const sentenceTexts = segment.text.match(/[^.!?]+[.!?]/g)?.map((sentence) => sentence.trim()) ?? [];
+  const sentenceTexts = segment.text.match(/[^.!?]+(?:[.!?]+|$)/g)?.map((sentence) => sentence.trim()).filter(Boolean) ?? [];
   if (sentenceTexts.length < 2) {
     return [{ sentence: segment.text, start: 0, end: segment.duration }];
   }
