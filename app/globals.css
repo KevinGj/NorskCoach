@@ -956,6 +956,37 @@ h1 em {
   color: #04100b;
 }
 
+.practiceInput {
+  background: #07120d;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  display: grid;
+  gap: 12px;
+  margin: 12px 0 18px;
+  padding: 14px;
+}
+
+.inlinePractice {
+  margin: 22px 0 0;
+}
+
+.practiceActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.practiceInput input {
+  background: #050d0a;
+  border: 1px solid #243b32;
+  border-radius: 9px;
+  color: var(--ink);
+  min-height: 42px;
+  outline: none;
+  padding: 0 14px;
+  width: 100%;
+}
+
 .profileGrid,
 .feedbackGrid {
   display: grid;
@@ -1013,8 +1044,19 @@ h1 em {
   align-items: center;
   display: grid;
   gap: 14px;
-  grid-template-columns: auto auto minmax(220px, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   margin: 28px 46px 46px;
+}
+
+.bottomBar > .primary,
+.bottomBar > .ghostButton,
+.bottomBar > input {
+  display: none;
+}
+
+.bottomBar .nextButton {
+  grid-column: 2;
+  justify-self: end;
 }
 
 .bottomBar input {

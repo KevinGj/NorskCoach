@@ -912,7 +912,7 @@ function AudioStudyPanel({
         <ul>
           <li>
             <span className={redWords.length ? "red" : "good"} />
-            {redWords.length ? `Mangler/avviker: ${redWords.join(", ")}` : "Ordene i transkripsjonen dekker referansen godt"}
+            {redWords.length ? `Sjekk STT/tekst rundt: ${redWords.join(", ")}` : "STT-transkripsjonen dekker referansen godt"}
           </li>
           <li>
             <span className={varianceZones.some((zone) => zone.severity === "red") ? "red" : varianceZones.length ? "yellow" : "good"} />
@@ -929,7 +929,7 @@ function AudioStudyPanel({
           {yellowWords.length > 0 && (
             <li>
               <span className="yellow" />
-              Sjekk rekkefølge/trykk: {yellowWords.join(", ")}
+              Mulig STT-rekkefølge eller tegnsetting: {yellowWords.join(", ")}
             </li>
           )}
         </ul>
@@ -1569,6 +1569,24 @@ export default function Home() {
               <div className="promptBox">
                 <p className="microLabel">Coach sier</p>
                 <h2>{prompt}</h2>
+                {stage.id !== "feedback" && (
+                  <div className="practiceInput inlinePractice">
+                    <div className="practiceActions">
+                      <button className={isListening ? "recording primary" : "primary"} onClick={toggleListening}>
+                        â— {isListening ? "Stopp opptak" : "Start tale"}
+                      </button>
+                      <button className="ghostButton" onClick={analyze} disabled={isLoading}>
+                        {isLoading ? "Analyserer..." : "Analyser"}
+                      </button>
+                    </div>
+                    <input
+                      aria-label="Transkripsjon"
+                      value={transcript}
+                      onChange={(event) => setTranscript(event.target.value)}
+                      placeholder="STT-transkripsjonen vises her. Den kan inneholde feil i ord og tegnsetting."
+                    />
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1698,6 +1716,22 @@ export default function Home() {
                       Teksten har {transcriptWordCount} ord, men tidslinjen har {timedWordCount}. Hopp over scoring på dette klippet eller kjør ny justering.
                     </p>
                   )}
+                </div>
+                <div className="practiceInput">
+                  <div className="practiceActions">
+                    <button className={isListening ? "recording primary" : "primary"} onClick={toggleListening}>
+                      â— {isListening ? "Stopp opptak" : "Start tale"}
+                    </button>
+                    <button className="ghostButton" onClick={analyze} disabled={isLoading}>
+                      {isLoading ? "Analyserer..." : "Analyser"}
+                    </button>
+                  </div>
+                  <input
+                    aria-label="Transkripsjon"
+                    value={transcript}
+                    onChange={(event) => setTranscript(event.target.value)}
+                    placeholder="STT-transkripsjonen vises her. Den kan inneholde feil i ord og tegnsetting."
+                  />
                 </div>
                 <div className="sentencePractice">
                   <h3>{activeReferenceSegments.length > 1 ? "Øv setning for setning" : "Øv valgt segment"}</h3>
