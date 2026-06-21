@@ -189,6 +189,8 @@ export async function GET() {
 
         return {
           ...correctedSegment,
+          originalText: segment.text,
+          hasTextCorrection: Boolean(correction?.text),
           words,
           tokens: buildTimelineTokens(words, tokenDuration)
         };

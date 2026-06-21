@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CoachFeedback, ExerciseType, LearnerProfile, Scores } from "@/lib/coach";
 
 type StageId = ExerciseType | "reference" | "feedback";
@@ -71,6 +71,8 @@ type AudioSegment = {
   duration: number;
   utteranceCount: number;
   text: string;
+  originalText?: string;
+  hasTextCorrection?: boolean;
   words?: TimedWord[];
   tokens?: TimelineToken[];
 };
@@ -874,6 +876,9 @@ export default function Home() {
   const [selectedAudioSegmentId, setSelectedAudioSegmentId] = useState(fallbackAudioSegment.id);
   const [trackFilter, setTrackFilter] = useState("all");
   const [segmentQuery, setSegmentQuery] = useState("");
+  const [isEditingReferenceText, setIsEditingReferenceText] = useState(false);
+  const [referenceTextDraft, setReferenceTextDraft] = useState("");
+  const [isSavingReferenceText, setIsSavingReferenceText] = useState(false);
   const [selectedVoice, setSelectedVoice] = useState(voices[0].name);
   const [referenceTime, setReferenceTime] = useState(0);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
@@ -932,6 +937,21 @@ export default function Home() {
   const averages = averageScores(entries);
   const totalMinutes = entries.reduce((sum, entry) => sum + entry.minutes, 0);
   const activeScores = feedback?.scores ?? averages;
+  const loadAudioSegments = useCallback(async () => {
+    try {
+      const response = await fetch("/api/segments");
+      const segments = (await response.json()) as AudioSegment[];
+      if (!segments.length) return;
+      setAudioSegments(segments);
+      setSelectedAudioSegmentId((current) =>
+        current === fallbackAudioSegment.id || !segments.some((segment) => segment.id === current)
+          ? segments[0].id
+          : current
+      );
+    } catch {
+      setAudioSegments([]);
+    }
+  }, []);
 
   useEffect(() => {
     const savedProfile = localStorage.getItem("norsk-coach-profile");
@@ -945,19 +965,8 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    fetch("/api/segments")
-      .then((response) => response.json())
-      .then((segments: AudioSegment[]) => {
-        if (!segments.length) return;
-        setAudioSegments(segments);
-        setSelectedAudioSegmentId((current) =>
-          current === fallbackAudioSegment.id || !segments.some((segment) => segment.id === current)
-            ? segments[0].id
-            : current
-        );
-      })
-      .catch(() => setAudioSegments([]));
-  }, []);
+    void loadAudioSegments();
+  }, [loadAudioSegments]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1036,6 +1045,11 @@ export default function Home() {
   useEffect(() => {
     localStorage.setItem("norsk-coach-segment", selectedAudioSegmentId);
   }, [selectedAudioSegmentId]);
+
+  useEffect(() => {
+    setReferenceTextDraft(selectedAudioSegment.text);
+    setIsEditingReferenceText(false);
+  }, [selectedAudioSegment.id, selectedAudioSegment.text]);
 
   useEffect(() => {
     setSelectedSentence(0);
@@ -1264,6 +1278,38 @@ export default function Home() {
     }
   };
 
+  const saveReferenceText = async () => {
+    setIsSavingReferenceText(true);
+    try {
+      const response = await fetch("/api/segment-corrections", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "save", id: selectedAudioSegment.id, text: referenceTextDraft })
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadAudioSegments();
+      setIsEditingReferenceText(false);
+    } finally {
+      setIsSavingReferenceText(false);
+    }
+  };
+
+  const resetReferenceText = async () => {
+    setIsSavingReferenceText(true);
+    try {
+      const response = await fetch("/api/segment-corrections", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reset", id: selectedAudioSegment.id })
+      });
+      if (!response.ok) throw new Error(await response.text());
+      await loadAudioSegments();
+      setIsEditingReferenceText(false);
+    } finally {
+      setIsSavingReferenceText(false);
+    }
+  };
+
   const speak = () => {
     if (stage.id === "reference") {
       playFullReference();
@@ -1347,6 +1393,9 @@ export default function Home() {
   const strengths = profile.strengths.length ? profile.strengths : ["God vilje til å holde samtalen på norsk", "Du svarer tydelig og konsist", "Tydelig artikulasjon"];
   const patterns = profile.common_patterns.length ? profile.common_patterns : ["litt hakkete rytme"];
   const issues = profile.pronunciation_issues.length ? profile.pronunciation_issues : ["norske vokaler og konsonantgrupper"];
+  const transcriptWordCount = selectedAudioSegment.text.split(/\s+/).filter(Boolean).length;
+  const timedWordCount = selectedAudioSegment.tokens?.filter((token) => token.type === "word").length ?? 0;
+  const hasTimingRisk = timedWordCount > 0 && Math.abs(transcriptWordCount - timedWordCount) > 2;
 
   return (
     <main>
@@ -1485,14 +1534,66 @@ export default function Home() {
                   </div>
                 </div>
                 <div className="referenceText">
-                  <p className="microLabel">Referansetekst · {selectedAudioSegment.id}</p>
-                  <p>
-                    {activeReferenceSegments.map((segment, index) => (
-                      <span className={index === selectedSentence ? "highlightSentence" : ""} key={segment.sentence}>
-                        {segment.sentence}{" "}
-                      </span>
-                    ))}
-                  </p>
+                  <div className="referenceTextHeader">
+                    <p className="microLabel">
+                      Referansetekst · {selectedAudioSegment.id}
+                      {selectedAudioSegment.hasTextCorrection ? " · korrigert" : ""}
+                    </p>
+                    <div className="transcriptActions">
+                      {isEditingReferenceText ? (
+                        <>
+                          <button className="tinyButton primaryTiny" onClick={saveReferenceText} disabled={isSavingReferenceText}>
+                            {isSavingReferenceText ? "Lagrer..." : "Lagre"}
+                          </button>
+                          <button
+                            className="tinyButton"
+                            onClick={() => {
+                              setReferenceTextDraft(selectedAudioSegment.text);
+                              setIsEditingReferenceText(false);
+                            }}
+                            disabled={isSavingReferenceText}
+                          >
+                            Avbryt
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button className="tinyButton" onClick={() => setIsEditingReferenceText(true)}>
+                            Rediger
+                          </button>
+                          <button className="tinyButton" onClick={resetReferenceText} disabled={!selectedAudioSegment.hasTextCorrection || isSavingReferenceText}>
+                            Nullstill
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  {isEditingReferenceText ? (
+                    <>
+                      <textarea
+                        className="transcriptEditor"
+                        value={referenceTextDraft}
+                        onChange={(event) => setReferenceTextDraft(event.target.value)}
+                        rows={7}
+                      />
+                      <p className="editorHint">
+                        Endre tekst og tegnsetting. Store ordendringer kan gjøre tidsmarkering mindre presis til vi kjører ny justering.
+                      </p>
+                    </>
+                  ) : (
+                    <p>
+                      {activeReferenceSegments.map((segment, index) => (
+                        <span className={index === selectedSentence ? "highlightSentence" : ""} key={segment.sentence}>
+                          {segment.sentence}{" "}
+                        </span>
+                      ))}
+                    </p>
+                  )}
+                  {hasTimingRisk && (
+                    <p className="timingWarning">
+                      Teksten har {transcriptWordCount} ord, men tidslinjen har {timedWordCount}. Hopp over scoring på dette klippet eller kjør ny justering.
+                    </p>
+                  )}
                 </div>
                 <div className="sentencePractice">
                   <h3>{activeReferenceSegments.length > 1 ? "Øv setning for setning" : "Øv valgt segment"}</h3>

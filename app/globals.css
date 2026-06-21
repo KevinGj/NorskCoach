@@ -835,12 +835,72 @@ h1 em {
   padding: 24px 26px;
 }
 
+.referenceTextHeader {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
 .referenceText p:not(.microLabel) {
   color: var(--soft);
   font-size: 1.02rem;
   line-height: 1.72;
   margin-bottom: 0;
   max-width: 68ch;
+}
+
+.transcriptActions {
+  display: flex;
+  gap: 7px;
+}
+
+.tinyButton {
+  background: #0e1b16;
+  border: 1px solid #243b32;
+  border-radius: 8px;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 800;
+  min-height: 31px;
+  padding: 0 10px;
+}
+
+.tinyButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.primaryTiny {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #03100b;
+}
+
+.transcriptEditor {
+  background: #07120d;
+  border: 1px solid #1a7e5b;
+  border-radius: 10px;
+  color: var(--soft);
+  font: inherit;
+  line-height: 1.55;
+  padding: 12px;
+  resize: vertical;
+  width: 100%;
+}
+
+.editorHint,
+.timingWarning {
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
+  margin-top: 8px;
+}
+
+.timingWarning {
+  color: var(--warn);
 }
 
 .highlightSentence {
