@@ -878,6 +878,7 @@ export default function Home() {
   const [segmentQuery, setSegmentQuery] = useState("");
   const [isEditingReferenceText, setIsEditingReferenceText] = useState(false);
   const [referenceTextDraft, setReferenceTextDraft] = useState("");
+  const [referenceTextError, setReferenceTextError] = useState("");
   const [isSavingReferenceText, setIsSavingReferenceText] = useState(false);
   const [selectedVoice, setSelectedVoice] = useState(voices[0].name);
   const [referenceTime, setReferenceTime] = useState(0);
@@ -1048,6 +1049,7 @@ export default function Home() {
 
   useEffect(() => {
     setReferenceTextDraft(selectedAudioSegment.text);
+    setReferenceTextError("");
     setIsEditingReferenceText(false);
   }, [selectedAudioSegment.id, selectedAudioSegment.text]);
 
@@ -1280,15 +1282,21 @@ export default function Home() {
 
   const saveReferenceText = async () => {
     setIsSavingReferenceText(true);
+    setReferenceTextError("");
     try {
       const response = await fetch("/api/segment-corrections", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "save", id: selectedAudioSegment.id, text: referenceTextDraft })
       });
-      if (!response.ok) throw new Error(await response.text());
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error ?? "Kunne ikke lagre transkripsjonen.");
+      }
       await loadAudioSegments();
       setIsEditingReferenceText(false);
+    } catch (error) {
+      setReferenceTextError(error instanceof Error ? error.message : "Kunne ikke lagre transkripsjonen.");
     } finally {
       setIsSavingReferenceText(false);
     }
@@ -1296,6 +1304,7 @@ export default function Home() {
 
   const resetReferenceText = async () => {
     setIsSavingReferenceText(true);
+    setReferenceTextError("");
     try {
       const response = await fetch("/api/segment-corrections", {
         method: "POST",
@@ -1396,6 +1405,10 @@ export default function Home() {
   const transcriptWordCount = selectedAudioSegment.text.split(/\s+/).filter(Boolean).length;
   const timedWordCount = selectedAudioSegment.tokens?.filter((token) => token.type === "word").length ?? 0;
   const hasTimingRisk = timedWordCount > 0 && Math.abs(transcriptWordCount - timedWordCount) > 2;
+  const originalReferenceWordCount = (selectedAudioSegment.originalText ?? selectedAudioSegment.text).split(/\s+/).filter(Boolean).length;
+  const draftReferenceWordCount = referenceTextDraft.split(/\s+/).filter(Boolean).length;
+  const isDraftSuspiciouslyShort =
+    originalReferenceWordCount >= 8 && draftReferenceWordCount < Math.ceil(originalReferenceWordCount * 0.7);
 
   return (
     <main>
@@ -1542,7 +1555,7 @@ export default function Home() {
                     <div className="transcriptActions">
                       {isEditingReferenceText ? (
                         <>
-                          <button className="tinyButton primaryTiny" onClick={saveReferenceText} disabled={isSavingReferenceText}>
+                          <button className="tinyButton primaryTiny" onClick={saveReferenceText} disabled={isSavingReferenceText || isDraftSuspiciouslyShort}>
                             {isSavingReferenceText ? "Lagrer..." : "Lagre"}
                           </button>
                           <button
@@ -1579,6 +1592,12 @@ export default function Home() {
                       <p className="editorHint">
                         Endre tekst og tegnsetting. Store ordendringer kan gjøre tidsmarkering mindre presis til vi kjører ny justering.
                       </p>
+                      {isDraftSuspiciouslyShort && (
+                        <p className="timingWarning">
+                          Utkastet har bare {draftReferenceWordCount} av ca. {originalReferenceWordCount} ord. Lagre er blokkert for Ã¥ unngÃ¥ Ã¥ erstatte hele teksten med et utdrag.
+                        </p>
+                      )}
+                      {referenceTextError && <p className="timingWarning">{referenceTextError}</p>}
                     </>
                   ) : (
                     <p>

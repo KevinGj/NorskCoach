@@ -15,12 +15,26 @@ type CorrectionRequest = {
 };
 
 const correctionsPath = path.join(process.cwd(), "data", "segment-corrections.json");
+const manifestPath = path.join(process.cwd(), "data", "audio-segments.json");
+
+function wordCount(text = "") {
+  return text.split(/\s+/).filter(Boolean).length;
+}
 
 async function readCorrections() {
   try {
     return JSON.parse(await fs.readFile(correctionsPath, "utf8")) as Record<string, SegmentCorrection>;
   } catch {
     return {};
+  }
+}
+
+async function readOriginalText(id: string) {
+  try {
+    const segments = JSON.parse(await fs.readFile(manifestPath, "utf8")) as { id: string; text?: string }[];
+    return segments.find((segment) => segment.id === id)?.text ?? "";
+  } catch {
+    return "";
   }
 }
 
@@ -45,6 +59,20 @@ export async function POST(request: Request) {
 
   const text = payload.text?.trim();
   if (!text) return Response.json({ error: "Transcript text cannot be empty." }, { status: 400 });
+
+  const originalText = await readOriginalText(payload.id);
+  const originalWordCount = wordCount(originalText);
+  const proposedWordCount = wordCount(text);
+  if (originalWordCount >= 8 && proposedWordCount < Math.ceil(originalWordCount * 0.7)) {
+    return Response.json(
+      {
+        error: "Edited transcript is much shorter than the original. Save blocked to avoid accidentally replacing the full transcript with a fragment.",
+        originalWordCount,
+        proposedWordCount
+      },
+      { status: 409 }
+    );
+  }
 
   corrections[payload.id] = {
     ...(corrections[payload.id] ?? {}),
