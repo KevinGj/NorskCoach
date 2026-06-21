@@ -889,8 +889,9 @@ export default function Home() {
   });
   const selectedAudioSegment =
     librarySegments.find((segment) => segment.id === selectedAudioSegmentId) ?? librarySegments[0] ?? fallbackAudioSegment;
-  const activeReferenceSegments = makeSegmentsForAudio(selectedAudioSegment);
-  const activeReferenceDuration = selectedAudioSegment.duration;
+  const activeReferenceDuration = nativeAnalysis?.duration ?? selectedAudioSegment.duration;
+  const timingAudioSegment = { ...selectedAudioSegment, duration: activeReferenceDuration };
+  const activeReferenceSegments = makeSegmentsForAudio(timingAudioSegment);
   const selectedSegment = activeReferenceSegments[selectedSentence] ?? activeReferenceSegments[0];
   const selectedSentenceDuration = selectedSegment.end - selectedSegment.start;
   const selectedSentenceTime = Math.min(selectedSentenceDuration, Math.max(0, referenceTime - selectedSegment.start));
