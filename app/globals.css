@@ -357,6 +357,25 @@ h1 em {
   user-select: none;
 }
 
+.graphPlayButton {
+  background: rgba(53, 224, 164, 0.92);
+  border: 0;
+  border-radius: 999px;
+  color: #03100b;
+  cursor: pointer;
+  font-weight: 900;
+  min-height: 36px;
+  padding: 0 16px;
+  position: absolute;
+  right: 18px;
+  top: 16px;
+  z-index: 8;
+}
+
+.graphPlayButton:hover {
+  background: var(--accent);
+}
+
 .playhead {
   background: var(--accent);
   bottom: 86px;

@@ -518,6 +518,7 @@ function AudioStudyPanel({
   studentPitch,
   isStudentListening,
   isPlaying,
+  onPause,
   onScrub,
   onPlayToggle,
   onToggleStudent
@@ -534,6 +535,7 @@ function AudioStudyPanel({
   studentPitch: PitchPoint[];
   isStudentListening: boolean;
   isPlaying: boolean;
+  onPause: () => void;
   onScrub: (time: number) => void;
   onPlayToggle: () => void;
   onToggleStudent: () => void;
@@ -615,6 +617,14 @@ function AudioStudyPanel({
           if (event.buttons === 1) scrubFromPointer(event.clientX);
         }}
       >
+        <button
+          className="graphPlayButton"
+          onClick={isPlaying ? onPause : onPlayToggle}
+          onPointerDown={(event) => event.stopPropagation()}
+          type="button"
+        >
+          {isPlaying ? "Pause" : "▶ Play"}
+        </button>
         <div className="playhead" style={{ left: `${playheadPercent}%` }} />
         <div className="waveform" aria-label="Waveform for valgt setning">
           {columns.map((height, index) => (
@@ -751,6 +761,7 @@ export default function Home() {
   const micStreamRef = useRef<MediaStream | null>(null);
   const micIntervalRef = useRef<number | null>(null);
   const playbackOffsetRef = useRef(0);
+  const playbackStopAtRef = useRef<number | null>(null);
 
   const stage = stages[stageIndex];
   const librarySegments = audioSegments.length ? audioSegments : [fallbackAudioSegment];
@@ -886,7 +897,19 @@ export default function Home() {
   const stopAudio = () => {
     audioRef.current?.pause();
     window.speechSynthesis?.cancel();
+    playbackStopAtRef.current = null;
     setIsAudioPlaying(false);
+  };
+
+  const pauseReferenceAudio = () => {
+    const audio = audioRef.current;
+    if (audio && !audio.paused) {
+      playbackOffsetRef.current = audio.currentTime;
+      setReferenceTime(audio.currentTime);
+      audio.pause();
+    } else {
+      stopAudio();
+    }
   };
 
   const stopStudentPitch = () => {
@@ -998,7 +1021,7 @@ export default function Home() {
     }
   };
 
-  const playReferenceAudio = async (url: string, offset = 0, trackReference = true) => {
+  const playReferenceAudio = async (url: string, offset = 0, trackReference = true, stopAt: number | null = null) => {
     if (!url) {
       fallbackSpeech(selectedAudioSegment.text, 0.92, offset, trackReference);
       return;
@@ -1010,16 +1033,27 @@ export default function Home() {
       const audio = new Audio(url);
       audioRef.current = audio;
       playbackOffsetRef.current = offset;
+      playbackStopAtRef.current = stopAt;
       audio.currentTime = offset;
       audio.onplay = () => setIsAudioPlaying(true);
       audio.onpause = () => setIsAudioPlaying(false);
-      audio.onended = () => setIsAudioPlaying(false);
+      audio.onended = () => {
+        playbackStopAtRef.current = null;
+        setIsAudioPlaying(false);
+      };
       audio.ontimeupdate = () => {
         if (trackReference) {
           const nextTime = Math.min(activeReferenceDuration, audio.currentTime);
           setReferenceTime(nextTime);
           const segment = segmentAtReferenceTime(nextTime);
           setSelectedSentence(Math.max(0, activeReferenceSegments.indexOf(segment)));
+          if (playbackStopAtRef.current !== null && nextTime >= playbackStopAtRef.current) {
+            audio.pause();
+            audio.currentTime = playbackStopAtRef.current;
+            setReferenceTime(playbackStopAtRef.current);
+            playbackOffsetRef.current = playbackStopAtRef.current;
+            playbackStopAtRef.current = null;
+          }
         }
       };
       await audio.play();
@@ -1030,22 +1064,27 @@ export default function Home() {
 
   const playFullReference = () => {
     if (isAudioPlaying) {
-      stopAudio();
+      pauseReferenceAudio();
       return;
     }
-    setSelectedSentence(0);
-    setReferenceTime(0);
-    void playReferenceAudio(selectedAudioSegment.audio, 0, true);
+    const savedTime = Math.max(referenceTime, playbackOffsetRef.current);
+    const resumeTime = savedTime >= activeReferenceDuration - 0.05 ? 0 : Math.min(activeReferenceDuration, Math.max(0, savedTime));
+    const segment = segmentAtReferenceTime(resumeTime);
+    setSelectedSentence(Math.max(0, activeReferenceSegments.indexOf(segment)));
+    setReferenceTime(resumeTime);
+    void playReferenceAudio(selectedAudioSegment.audio, resumeTime, true);
   };
 
   const playSelectedSentence = () => {
     if (isAudioPlaying) {
-      stopAudio();
+      pauseReferenceAudio();
       return;
     }
-    setReferenceTime(selectedSegment.start);
+    const resumeTime =
+      referenceTime >= selectedSegment.start && referenceTime < selectedSegment.end ? referenceTime : selectedSegment.start;
+    setReferenceTime(resumeTime);
     setStudentPitch([]);
-    void playReferenceAudio(selectedAudioSegment.audio, selectedSegment.start, true);
+    void playReferenceAudio(selectedAudioSegment.audio, resumeTime, true, selectedSegment.end);
   };
 
   const scrubReference = (time: number) => {
@@ -1053,7 +1092,13 @@ export default function Home() {
     setReferenceTime(globalTime);
     playbackOffsetRef.current = globalTime;
     if (isAudioPlaying) {
-      void playReferenceAudio(selectedAudioSegment.audio, globalTime, true);
+      const audio = audioRef.current;
+      if (audio && selectedAudioSegment.audio) {
+        audio.currentTime = globalTime;
+        playbackStopAtRef.current = selectedSegment.end;
+      } else {
+        void playReferenceAudio(selectedAudioSegment.audio, globalTime, true, selectedSegment.end);
+      }
     }
   };
 
@@ -1204,6 +1249,7 @@ export default function Home() {
                 studentPitch={studentPitch}
                 isStudentListening={isStudentListening}
                 isPlaying={isAudioPlaying}
+                onPause={pauseReferenceAudio}
                 onScrub={scrubReference}
                 onPlayToggle={playSelectedSentence}
                 onToggleStudent={() => void toggleStudentPitch()}
