@@ -1727,9 +1727,6 @@ export default function Home() {
         <section className="metricsGrid">
           <MetricCard label="Minutter" value={totalMinutes} />
           <MetricCard label="Dager på rad" value={streak(entries)} />
-          <ScoreCard label="Uttale" value={activeScores.pronunciation} />
-          <ScoreCard label="Rytme" value={activeScores.rhythm} />
-          <ScoreCard label="Flyt" value={activeScores.fluency} />
         </section>
 
         {stage.id === "reference" && (
@@ -2042,7 +2039,12 @@ export default function Home() {
 
         {showCoachSummary && (
           <>
-        <section className="profileGrid">
+            <section className="coachScoreGrid">
+              <ScoreCard label="Uttale" value={activeScores.pronunciation} />
+              <ScoreCard label="Rytme" value={activeScores.rhythm} />
+              <ScoreCard label="Flyt" value={activeScores.fluency} />
+            </section>
+            <section className="profileGrid">
           <div>
             <h3>Styrker</h3>
             {strengths.slice(0, 3).map((item) => (

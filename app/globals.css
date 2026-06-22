@@ -1168,12 +1168,17 @@ h1 em {
   margin-top: 0;
 }
 
+.coachScoreGrid,
 .profileGrid,
 .feedbackGrid {
   display: grid;
   gap: 18px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   margin: 28px 46px 0;
+}
+
+.coachScoreGrid {
+  margin-top: 18px;
 }
 
 .profileGrid > div,
@@ -1270,6 +1275,7 @@ h1 em {
   }
 
   .metricsGrid,
+  .coachScoreGrid,
   .profileGrid,
   .feedbackGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1292,6 +1298,7 @@ h1 em {
   .workspace,
   .coachSummaryBar,
   .coachVowelSummary,
+  .coachScoreGrid,
   .profileGrid,
   .feedbackGrid,
   .bottomBar {
@@ -1309,6 +1316,7 @@ h1 em {
 
   .stageRail,
   .metricsGrid,
+  .coachScoreGrid,
   .profileGrid,
   .feedbackGrid,
   .bottomBar,
