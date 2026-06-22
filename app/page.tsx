@@ -702,6 +702,83 @@ function ScoreCard({ label, value }: { label: string; value: number }) {
   );
 }
 
+function scoreToFive(value: number) {
+  return Math.max(1, Math.min(5, Math.round(value / 20)));
+}
+
+function ExerciseScoreRow({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="exerciseScoreRow">
+      <span>{label}</span>
+      <strong>{value}/5</strong>
+      <div className="scoreDots" aria-label={`${label}: ${value} av 5`}>
+        {Array.from({ length: 5 }, (_, index) => (
+          <i className={index < value ? "filled" : ""} key={index} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ExerciseAnalysisPanel({
+  activeSentence,
+  transcript,
+  feedback,
+  studentPitch
+}: {
+  activeSentence: string;
+  transcript: string;
+  feedback: CoachFeedback | null;
+  studentPitch: PitchPoint[];
+}) {
+  const hasTranscript = Boolean(transcript.trim());
+  const wordScores = scoreTranscriptWords(activeSentence, transcript);
+  const redCount = wordScores.filter((word) => word.severity === "red").length;
+  const yellowCount = wordScores.filter((word) => word.severity === "yellow").length;
+  const wordCount = Math.max(1, wordScores.length);
+  const clarityPercent = hasTranscript ? 100 - (redCount / wordCount) * 70 - (yellowCount / wordCount) * 28 : 0;
+  const clarityScore = hasTranscript ? scoreToFive(clarityPercent) : 1;
+  const rhythmScore = feedback ? scoreToFive(feedback.scores.rhythm) : Math.max(1, Math.min(5, clarityScore - (yellowCount ? 1 : 0)));
+  const hasPitchTrace = studentPitch.some((point) => point !== null);
+  const melodyScore = hasPitchTrace ? Math.max(2, Math.min(5, scoreToFive(feedback?.scores.fluency ?? clarityPercent))) : 2;
+  const allUp = hasTranscript ? Math.round((clarityScore + rhythmScore + melodyScore) / 3) : 1;
+  const issueWords = wordScores
+    .filter((word) => word.severity !== "good")
+    .slice(0, 4)
+    .map((word) => word.word.replace(/[,.!?;:]$/, ""));
+
+  return (
+    <div className="exerciseAnalysisCard">
+      <div className="exerciseAnalysisHeader">
+        <p className="microLabel">Current exercise analysis</p>
+        <strong>{hasTranscript ? `${allUp}/5` : "--/5"}</strong>
+      </div>
+      <h3>
+        {hasTranscript
+          ? clarityScore >= 4
+            ? "Good clarity. Keep shaping rhythm and melody."
+            : "Clear enough to study. Focus the next pass."
+          : "Run analysis after speaking this segment."}
+      </h3>
+      <p>
+        {hasTranscript
+          ? issueWords.length
+            ? `Review STT/text around: ${issueWords.join(", ")}. Then repeat for steadier rhythm.`
+            : "Word pronunciation looks clear in the transcript. Next focus: consistent rhythm and sentence melody."
+          : "Record yourself, check the STT text, then press Analyser for this segment only."}
+      </p>
+      <div className="exerciseScores">
+        <ExerciseScoreRow label="Clarity" value={clarityScore} />
+        <ExerciseScoreRow label="Rhythm" value={rhythmScore} />
+        <ExerciseScoreRow label="Melody" value={melodyScore} />
+      </div>
+      {!hasPitchTrace && (
+        <p className="analysisMessage">Melody score is provisional until learner pitch tracking is captured.</p>
+      )}
+    </div>
+  );
+}
+
 function AudioStudyPanel({
   currentTime,
   duration,
@@ -979,6 +1056,7 @@ export default function Home() {
   const [isUserPlaybackPlaying, setIsUserPlaybackPlaying] = useState(false);
   const [feedback, setFeedback] = useState<CoachFeedback | null>(null);
   const [analysisMessage, setAnalysisMessage] = useState("");
+  const [showCoachSummary, setShowCoachSummary] = useState(false);
   const [profile, setProfile] = useState<LearnerProfile>(emptyProfile);
   const [entries, setEntries] = useState<SessionEntry[]>([]);
   const [isListening, setIsListening] = useState(false);
@@ -1696,6 +1774,7 @@ export default function Home() {
         <section className="workspace">
           <div className="analysisColumn">
             {stage.id === "reference" ? (
+              <>
               <AudioStudyPanel
                 currentTime={selectedSentenceTime}
                 duration={selectedSentenceDuration}
@@ -1716,6 +1795,27 @@ export default function Home() {
                 onPlayToggle={playSelectedSentence}
                 onToggleStudent={() => void toggleStudentPitch()}
               />
+              <div className="sentencePractice listenSentencePractice">
+                <h3>{activeReferenceSegments.length > 1 ? "Practice sentence by sentence" : "Practice selected segment"}</h3>
+                {activeReferenceSegments.map((segment, index) => (
+                  <button
+                    className={index === selectedSentence ? "sentence active" : "sentence"}
+                    key={segment.sentence}
+                    onClick={() => {
+                      stopAudio();
+                      stopStudentPitch();
+                      setSelectedSentence(index);
+                      setReferenceTime(segment.start);
+                      setStudentPitch([]);
+                      void playReferenceAudio(selectedAudioSegment.audio, segment.start, true);
+                    }}
+                  >
+                    <span>{index + 1}</span>
+                    {truncateSentence(segment.sentence)}
+                  </button>
+                ))}
+              </div>
+                          </>
             ) : (
               <div className="promptBox">
                 <p className="microLabel">Coach sier</p>
@@ -1896,8 +1996,14 @@ export default function Home() {
                   />
                   {analysisMessage && <p className="analysisMessage">{analysisMessage}</p>}
                 </div>
+                <ExerciseAnalysisPanel
+                  activeSentence={selectedSegment.sentence}
+                  transcript={transcript}
+                  feedback={feedback}
+                  studentPitch={studentPitch}
+                />
                 <div className="sentencePractice">
-                  <h3>{activeReferenceSegments.length > 1 ? "Øv setning for setning" : "Øv valgt segment"}</h3>
+                  <h3>{activeReferenceSegments.length > 1 ? "Practice sentence by sentence" : "Practice selected segment"}</h3>
                   {activeReferenceSegments.map((segment, index) => (
                     <button
                       className={index === selectedSentence ? "sentence active" : "sentence"}
@@ -1927,6 +2033,15 @@ export default function Home() {
         </section>
         </section>
 
+        <section className="coachSummaryBar">
+          <button className="ghostButton" onClick={() => setShowCoachSummary((current) => !current)}>
+            {showCoachSummary ? "Skjul coach summary" : "Vis coach summary"}
+          </button>
+          <span>Long-term profile, patterns, and broader coaching context.</span>
+        </section>
+
+        {showCoachSummary && (
+          <>
         <section className="profileGrid">
           <div>
             <h3>Styrker</h3>
@@ -1961,6 +2076,25 @@ export default function Home() {
               ))}
             </div>
           </section>
+        )}
+        <section className="coachVowelSummary">
+          <div className="vowelChart good">
+            <div>
+              <p className="microLabel">Experimental formant guide Â· F1/F2</p>
+              <h3>Vokalplassering</h3>
+              <p>This is broad coach context until real learner formants are extracted from the recording.</p>
+            </div>
+            <div className="vowelGrid" aria-label="Forenklet vokalkart">
+              {["i", "y", "u", "e", "Ã¸", "o", "Ã¦", "a", "Ã¥"].map((vowel, index) => (
+                <span className="vowelTarget" key={vowel} style={{ left: `${18 + (index % 3) * 32}%`, top: `${18 + Math.floor(index / 3) * 30}%` }}>
+                  {vowel}
+                </span>
+              ))}
+              <span className="vowelDot" style={{ left: "55%", top: "60%" }} />
+            </div>
+          </div>
+        </section>
+          </>
         )}
 
         <footer className="bottomBar">

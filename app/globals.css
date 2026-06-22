@@ -770,6 +770,12 @@ h1 em {
   display: none;
 }
 
+.referenceColumn > .sentencePractice,
+.analysisColumn > .focusScore,
+.analysisColumn > .vowelChart {
+  display: none;
+}
+
 .playControls label {
   display: grid;
   gap: 8px;
@@ -1057,6 +1063,111 @@ h1 em {
   margin: -2px 0 0;
 }
 
+.exerciseAnalysisCard {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  display: grid;
+  gap: 14px;
+  padding: 18px 20px;
+}
+
+.exerciseAnalysisHeader {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.exerciseAnalysisHeader .microLabel {
+  margin-bottom: 0;
+}
+
+.exerciseAnalysisHeader strong {
+  align-items: center;
+  background: #0a2a1e;
+  border: 1px solid #16865e;
+  border-radius: 999px;
+  color: var(--accent);
+  display: inline-flex;
+  font-size: 1rem;
+  min-height: 34px;
+  padding: 0 12px;
+}
+
+.exerciseAnalysisCard h3 {
+  font-size: 1.35rem;
+  margin-bottom: 0;
+}
+
+.exerciseAnalysisCard p:not(.microLabel) {
+  color: var(--soft);
+  line-height: 1.5;
+  margin-bottom: 0;
+}
+
+.exerciseScores {
+  display: grid;
+  gap: 10px;
+}
+
+.exerciseScoreRow {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(80px, 1fr) 42px auto;
+}
+
+.exerciseScoreRow > span {
+  color: var(--soft);
+  font-weight: 800;
+}
+
+.exerciseScoreRow strong {
+  color: var(--accent);
+  font-family: "Courier New", monospace;
+  font-size: 0.86rem;
+}
+
+.scoreDots {
+  display: flex;
+  gap: 5px;
+}
+
+.scoreDots i {
+  background: #20342b;
+  border-radius: 999px;
+  display: block;
+  height: 9px;
+  width: 9px;
+}
+
+.scoreDots i.filled {
+  background: var(--accent);
+}
+
+.coachSummaryBar {
+  align-items: center;
+  border-top: 1px solid #123227;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  margin: 34px 46px 0;
+  padding-top: 20px;
+}
+
+.coachSummaryBar span {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.coachVowelSummary {
+  margin: 18px 46px 0;
+}
+
+.coachVowelSummary .vowelChart {
+  margin-top: 0;
+}
+
 .profileGrid,
 .feedbackGrid {
   display: grid;
@@ -1179,6 +1290,8 @@ h1 em {
   .hero,
   .studyShell,
   .workspace,
+  .coachSummaryBar,
+  .coachVowelSummary,
   .profileGrid,
   .feedbackGrid,
   .bottomBar {
@@ -1216,7 +1329,8 @@ h1 em {
   .sectionHead,
   .playControls,
   .analysisActions,
-  .libraryFilters {
+  .libraryFilters,
+  .coachSummaryBar {
     align-items: stretch;
     display: grid;
     grid-template-columns: 1fr;
