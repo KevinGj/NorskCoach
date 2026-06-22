@@ -581,6 +581,12 @@ function normalizePitchToLane(pitch: number | null, samples: number[]) {
   return Math.max(18, Math.min(82, 82 - ((pitch - min) / range) * 64));
 }
 
+function isEditableShortcutTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  const tagName = target.tagName.toLowerCase();
+  return tagName === "input" || tagName === "textarea" || tagName === "select" || target.isContentEditable;
+}
+
 function normalizeToken(value: string) {
   return value
     .toLowerCase()
@@ -1066,6 +1072,15 @@ export default function Home() {
   const speechCaptureActiveRef = useRef(false);
   const speechRestartTimerRef = useRef<number | null>(null);
   const transcriptRef = useRef("");
+  const shortcutActionsRef = useRef<{
+    toggleListening: () => void | Promise<void>;
+    toggleNarration: () => void;
+    canRecord: boolean;
+  }>({
+    toggleListening: () => undefined,
+    toggleNarration: () => undefined,
+    canRecord: true
+  });
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
   const userAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -1632,6 +1647,44 @@ export default function Home() {
       setAnalysisMessage("Nettleseren støtter ikke STT her, men opptaket lagres for avspilling.");
     }
   };
+
+  const toggleNarration = () => {
+    if (stage.id === "reference") {
+      playSelectedSentence();
+      return;
+    }
+    if (isAudioPlaying) {
+      stopAudio();
+      return;
+    }
+    speak();
+  };
+
+  shortcutActionsRef.current = {
+    toggleListening,
+    toggleNarration,
+    canRecord: stage.id !== "feedback"
+  };
+
+  useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent) => {
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.repeat) return;
+      if (isEditableShortcutTarget(event.target)) return;
+
+      const key = event.key.toLowerCase();
+      if (key === "p") {
+        event.preventDefault();
+        shortcutActionsRef.current.toggleNarration();
+      }
+      if (key === "s" && shortcutActionsRef.current.canRecord) {
+        event.preventDefault();
+        void shortcutActionsRef.current.toggleListening();
+      }
+    };
+
+    window.addEventListener("keydown", handleShortcut);
+    return () => window.removeEventListener("keydown", handleShortcut);
+  }, []);
 
   const playUserRecording = () => {
     if (!userRecordingUrl) return;
