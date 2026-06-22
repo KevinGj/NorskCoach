@@ -28,6 +28,7 @@ type SpeechRecognition = {
   stop: () => void;
   onresult: ((event: SpeechRecognitionEvent) => void) | null;
   onend: (() => void) | null;
+  onerror: ((event: { error: string }) => void) | null;
 };
 
 type SpeechRecognitionEvent = {
@@ -1062,6 +1063,9 @@ export default function Home() {
   const [isListening, setIsListening] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const speechCaptureActiveRef = useRef(false);
+  const speechRestartTimerRef = useRef<number | null>(null);
+  const transcriptRef = useRef("");
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
   const userAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -1207,6 +1211,10 @@ export default function Home() {
   }, [profile]);
 
   useEffect(() => {
+    transcriptRef.current = transcript;
+  }, [transcript]);
+
+  useEffect(() => {
     localStorage.setItem("norsk-coach-entries", JSON.stringify(entries));
   }, [entries]);
 
@@ -1234,6 +1242,8 @@ export default function Home() {
 
   useEffect(() => {
     return () => {
+      speechCaptureActiveRef.current = false;
+      if (speechRestartTimerRef.current) window.clearTimeout(speechRestartTimerRef.current);
       audioRef.current?.pause();
       userAudioRef.current?.pause();
       if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
@@ -1255,8 +1265,18 @@ export default function Home() {
   };
 
   const stopSpeechCapture = () => {
+    speechCaptureActiveRef.current = false;
+    if (speechRestartTimerRef.current) {
+      window.clearTimeout(speechRestartTimerRef.current);
+      speechRestartTimerRef.current = null;
+    }
     const recognition = recognitionRef.current;
     recognitionRef.current = null;
+    if (recognition) {
+      recognition.onend = null;
+      recognition.onerror = null;
+      recognition.onresult = null;
+    }
     try {
       recognition?.stop();
     } catch {
@@ -1552,6 +1572,43 @@ export default function Home() {
     void playGoogleSpeech(prompt, stage.id === "shadowing" ? 0.9 : 0.96);
   };
 
+  const startSpeechRecognition = (Recognition: SpeechRecognitionConstructor) => {
+    if (!speechCaptureActiveRef.current) return;
+
+    const recognition = new Recognition();
+    const baseTranscript = transcriptRef.current.trim();
+    recognition.lang = "nb-NO";
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.onresult = (event) => {
+      let text = "";
+      for (let index = 0; index < event.results.length; index += 1) {
+        text += event.results[index][0].transcript;
+      }
+      const nextTranscript = [baseTranscript, text.trim()].filter(Boolean).join(" ");
+      transcriptRef.current = nextTranscript;
+      setTranscript(nextTranscript);
+    };
+    recognition.onerror = (event) => {
+      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+        setAnalysisMessage("Mikrofontilgang eller talegjenkjenning ble blokkert.");
+        stopSpeechCapture();
+      }
+    };
+    recognition.onend = () => {
+      recognitionRef.current = null;
+      if (!speechCaptureActiveRef.current) return;
+      speechRestartTimerRef.current = window.setTimeout(() => startSpeechRecognition(Recognition), 250);
+    };
+    recognitionRef.current = recognition;
+
+    try {
+      recognition.start();
+    } catch {
+      setAnalysisMessage("STT stoppet, men opptaket fortsetter. Du kan prøve igjen eller skrive teksten manuelt.");
+    }
+  };
+
   const toggleListening = async () => {
     setAnalysisMessage("");
     if (isListening) {
@@ -1567,28 +1624,13 @@ export default function Home() {
     }
 
     const Recognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+    speechCaptureActiveRef.current = true;
+    setIsListening(true);
     if (Recognition) {
-      const recognition = new Recognition();
-      recognition.lang = "nb-NO";
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.onresult = (event) => {
-        let text = "";
-        for (let index = 0; index < event.results.length; index += 1) {
-          text += event.results[index][0].transcript;
-        }
-        setTranscript(text.trim());
-      };
-      recognition.onend = () => {
-        if (speechRecorderRef.current?.state === "recording") stopSpeechCapture();
-      };
-      recognitionRef.current = recognition;
-      recognition.start();
+      startSpeechRecognition(Recognition);
     } else {
       setAnalysisMessage("Nettleseren støtter ikke STT her, men opptaket lagres for avspilling.");
     }
-
-    setIsListening(true);
   };
 
   const playUserRecording = () => {
