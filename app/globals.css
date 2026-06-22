@@ -974,6 +974,67 @@ h1 em {
   font-weight: 900;
 }
 
+.selectionHint {
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.4;
+  margin-top: 12px;
+}
+
+.phrasePracticePanel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 18px 20px;
+}
+
+.phrasePracticeList {
+  display: grid;
+  gap: 8px;
+}
+
+.phrasePracticeItem {
+  align-items: center;
+  background: #07120d;
+  border: 1px solid #18342a;
+  border-radius: 10px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  padding: 9px 10px;
+}
+
+.phrasePracticeItem button {
+  background: transparent;
+  border: 0;
+  color: var(--ink);
+  cursor: pointer;
+  font-weight: 900;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phrasePracticeItem span {
+  color: var(--muted);
+  font-family: "Courier New", monospace;
+  font-size: 0.72rem;
+}
+
+.phrasePracticeItem .removePhrase {
+  border: 1px solid #264539;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  padding: 5px 9px;
+}
+
 .sentencePractice h3 {
   font-family: Arial, Helvetica, sans-serif;
   font-size: 1rem;

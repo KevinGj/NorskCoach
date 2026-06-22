@@ -23,6 +23,15 @@ type ConversationTurn = {
   text: string;
 };
 
+type PhrasePracticeItem = {
+  id: string;
+  segmentId: string;
+  source: string;
+  text: string;
+  start: number;
+  end: number;
+};
+
 type Segment = {
   sentence: string;
   start: number;
@@ -209,6 +218,27 @@ function wordsFromText(text: string) {
     .split(/\s+/)
     .map(normalizeTimelineText)
     .filter(Boolean);
+}
+
+function findPhraseTokenRange(text: string, tokens: TimelineToken[] = []) {
+  const phraseWords = wordsFromText(text);
+  const wordTokens = tokens.filter((token) => token.type === "word");
+  if (!phraseWords.length || !wordTokens.length) return null;
+
+  for (let startIndex = 0; startIndex <= wordTokens.length - phraseWords.length; startIndex += 1) {
+    const matches = phraseWords.every(
+      (word, offset) => normalizeTimelineText(wordTokens[startIndex + offset]?.text ?? "") === word
+    );
+    if (!matches) continue;
+    const startToken = wordTokens[startIndex];
+    const endToken = wordTokens[startIndex + phraseWords.length - 1];
+    return {
+      start: Math.max(0, startToken.start - 0.06),
+      end: endToken.end + 0.14
+    };
+  }
+
+  return null;
 }
 
 function findBestTokenRange(sentenceWords: string[], wordTokens: TimelineToken[], cursor: number) {
@@ -1024,6 +1054,8 @@ export default function Home() {
   const [selectedAudioSegmentId, setSelectedAudioSegmentId] = useState(fallbackAudioSegment.id);
   const [trackFilter, setTrackFilter] = useState("all");
   const [segmentQuery, setSegmentQuery] = useState("");
+  const [selectedReferencePhrase, setSelectedReferencePhrase] = useState("");
+  const [phrasePracticeItems, setPhrasePracticeItems] = useState<PhrasePracticeItem[]>([]);
   const [isEditingReferenceText, setIsEditingReferenceText] = useState(false);
   const [referenceTextDraft, setReferenceTextDraft] = useState("");
   const [referenceTextError, setReferenceTextError] = useState("");
@@ -1130,10 +1162,12 @@ export default function Home() {
     const savedEntries = localStorage.getItem("norsk-coach-entries");
     const savedVoice = localStorage.getItem("norsk-coach-voice");
     const savedSegment = localStorage.getItem("norsk-coach-segment");
+    const savedPhrases = localStorage.getItem("norsk-coach-phrases");
     if (savedProfile) setProfile(JSON.parse(savedProfile) as LearnerProfile);
     if (savedEntries) setEntries(JSON.parse(savedEntries) as SessionEntry[]);
     if (savedVoice && voices.some((voice) => voice.name === savedVoice)) setSelectedVoice(savedVoice);
     if (savedSegment) setSelectedAudioSegmentId(savedSegment);
+    if (savedPhrases) setPhrasePracticeItems(JSON.parse(savedPhrases) as PhrasePracticeItem[]);
   }, []);
 
   useEffect(() => {
@@ -1221,6 +1255,10 @@ export default function Home() {
   useEffect(() => {
     localStorage.setItem("norsk-coach-segment", selectedAudioSegmentId);
   }, [selectedAudioSegmentId]);
+
+  useEffect(() => {
+    localStorage.setItem("norsk-coach-phrases", JSON.stringify(phrasePracticeItems));
+  }, [phrasePracticeItems]);
 
   useEffect(() => {
     setReferenceTextDraft(selectedAudioSegment.text);
@@ -1502,18 +1540,19 @@ export default function Home() {
         setIsAudioPlaying(false);
       };
       audio.ontimeupdate = () => {
+        if (playbackStopAtRef.current !== null && audio.currentTime >= playbackStopAtRef.current) {
+          audio.pause();
+          audio.currentTime = playbackStopAtRef.current;
+          setReferenceTime(playbackStopAtRef.current);
+          playbackOffsetRef.current = playbackStopAtRef.current;
+          playbackStopAtRef.current = null;
+          return;
+        }
         if (trackReference) {
           const nextTime = Math.min(activeReferenceDuration, audio.currentTime);
           setReferenceTime(nextTime);
           const segment = segmentAtReferenceTime(nextTime);
           setSelectedSentence(Math.max(0, activeReferenceSegments.indexOf(segment)));
-          if (playbackStopAtRef.current !== null && nextTime >= playbackStopAtRef.current) {
-            audio.pause();
-            audio.currentTime = playbackStopAtRef.current;
-            setReferenceTime(playbackStopAtRef.current);
-            playbackOffsetRef.current = playbackStopAtRef.current;
-            playbackStopAtRef.current = null;
-          }
         }
       };
       await audio.play();
@@ -1560,6 +1599,47 @@ export default function Home() {
         void playReferenceAudio(selectedAudioSegment.audio, globalTime, true, selectedSegment.end);
       }
     }
+  };
+
+  const captureReferenceSelection = () => {
+    const selectedText = window.getSelection()?.toString().replace(/\s+/g, " ").trim() ?? "";
+    setSelectedReferencePhrase(selectedText);
+  };
+
+  const addSelectedPhrase = () => {
+    const phrase = selectedReferencePhrase.trim();
+    const range = findPhraseTokenRange(phrase, selectedAudioSegment.tokens);
+    if (!phrase || !range) {
+      setAnalysisMessage("Marker et ord eller en frase i referanseteksten med tilgjengelig tidsdata.");
+      return;
+    }
+
+    const item: PhrasePracticeItem = {
+      id: `${selectedAudioSegment.id}-${range.start.toFixed(2)}-${range.end.toFixed(2)}-${phrase}`,
+      segmentId: selectedAudioSegment.id,
+      source: selectedAudioSegment.source,
+      text: phrase,
+      start: range.start,
+      end: Math.min(selectedAudioSegment.duration, range.end)
+    };
+
+    setPhrasePracticeItems((current) =>
+      current.some((existing) => existing.id === item.id || (existing.segmentId === item.segmentId && existing.text === item.text))
+        ? current
+        : [item, ...current].slice(0, 30)
+    );
+    setAnalysisMessage("Frasen er lagt til i øvelseslisten.");
+  };
+
+  const playPhrasePracticeItem = (item: PhrasePracticeItem) => {
+    const itemSegment = librarySegments.find((segment) => segment.id === item.segmentId) ?? selectedAudioSegment;
+    if (item.segmentId !== selectedAudioSegment.id) setSelectedAudioSegmentId(item.segmentId);
+    setReferenceTime(item.start);
+    void playReferenceAudio(itemSegment.audio, item.start, item.segmentId === selectedAudioSegment.id, item.end);
+  };
+
+  const removePhrasePracticeItem = (id: string) => {
+    setPhrasePracticeItems((current) => current.filter((item) => item.id !== id));
   };
 
   const saveReferenceText = async () => {
@@ -1839,6 +1919,8 @@ export default function Home() {
   const draftReferenceWordCount = referenceTextDraft.split(/\s+/).filter(Boolean).length;
   const isDraftSuspiciouslyShort =
     originalReferenceWordCount >= 8 && draftReferenceWordCount < Math.ceil(originalReferenceWordCount * 0.7);
+  const selectedPhraseRange = findPhraseTokenRange(selectedReferencePhrase, selectedAudioSegment.tokens);
+  const selectedPhraseCanBeSaved = Boolean(selectedReferencePhrase.trim() && selectedPhraseRange);
 
   return (
     <main>
@@ -2101,6 +2183,9 @@ export default function Home() {
                         </>
                       ) : (
                         <>
+                          <button className="tinyButton primaryTiny" onClick={addSelectedPhrase} disabled={!selectedPhraseCanBeSaved}>
+                            Legg til frase
+                          </button>
                           <button className="tinyButton" onClick={() => setIsEditingReferenceText(true)}>
                             Rediger
                           </button>
@@ -2130,7 +2215,7 @@ export default function Home() {
                       {referenceTextError && <p className="timingWarning">{referenceTextError}</p>}
                     </>
                   ) : (
-                    <p>
+                    <p onMouseUp={captureReferenceSelection} onKeyUp={captureReferenceSelection}>
                       {activeReferenceSegments.map((segment, index) => (
                         <span className={index === selectedSentence ? "highlightSentence" : ""} key={segment.sentence}>
                           {segment.sentence}{" "}
@@ -2138,10 +2223,38 @@ export default function Home() {
                       ))}
                     </p>
                   )}
+                  {!isEditingReferenceText && selectedReferencePhrase && (
+                    <p className={selectedPhraseCanBeSaved ? "selectionHint" : "timingWarning"}>
+                      Valgt: «{selectedReferencePhrase}» {selectedPhraseCanBeSaved ? "kan legges til." : "mangler presis tidskobling."}
+                    </p>
+                  )}
                   {hasTimingRisk && (
                     <p className="timingWarning">
                       Teksten har {transcriptWordCount} ord, men tidslinjen har {timedWordCount}. Hopp over scoring på dette klippet eller kjør ny justering.
                     </p>
+                  )}
+                </div>
+                <div className="phrasePracticePanel">
+                  <div className="referenceTextHeader">
+                    <p className="microLabel">Ord og fraser å øve på</p>
+                    <span className="libraryCount">{phrasePracticeItems.length} lagret</span>
+                  </div>
+                  {phrasePracticeItems.length ? (
+                    <div className="phrasePracticeList">
+                      {phrasePracticeItems.map((item) => (
+                        <div className="phrasePracticeItem" key={item.id}>
+                          <button onClick={() => playPhrasePracticeItem(item)}>
+                            ▶ {item.text}
+                          </button>
+                          <span>{item.source.replace(".mp3", "")} · {item.start.toFixed(1)}-{item.end.toFixed(1)}s</span>
+                          <button className="removePhrase" onClick={() => removePhrasePracticeItem(item.id)} aria-label={`Fjern ${item.text}`}>
+                            Fjern
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="selectionHint">Marker et ord eller en frase i referanseteksten og trykk Legg til frase.</p>
                   )}
                 </div>
                 <div className="practiceInput">
