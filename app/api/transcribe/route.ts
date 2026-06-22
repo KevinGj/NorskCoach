@@ -30,40 +30,52 @@ function encodingFromMimeType(mimeType: string) {
   return "WEBM_OPUS" as const;
 }
 
+function sampleRateFromEncoding(encoding: ReturnType<typeof encodingFromMimeType>) {
+  return encoding === "WEBM_OPUS" || encoding === "OGG_OPUS" ? 48000 : undefined;
+}
+
 export async function POST(request: Request) {
-  const formData = await request.formData();
-  const audio = formData.get("audio");
+  try {
+    const formData = await request.formData();
+    const audio = formData.get("audio");
 
-  if (!(audio instanceof Blob) || audio.size === 0) {
-    return Response.json({ error: "Mangler lydopptak." }, { status: 400 });
-  }
-
-  const buffer = Buffer.from(await audio.arrayBuffer());
-  const client = makeClient();
-  const [response] = await client.recognize({
-    audio: {
-      content: buffer.toString("base64")
-    },
-    config: {
-      encoding: encodingFromMimeType(audio.type),
-      languageCode: "no-NO",
-      enableAutomaticPunctuation: true,
-      model: "long"
+    if (!(audio instanceof Blob) || audio.size === 0) {
+      return Response.json({ error: "Mangler lydopptak." }, { status: 400 });
     }
-  });
 
-  const transcript = response.results
-    ?.map((result) => result.alternatives?.[0]?.transcript?.trim() ?? "")
-    .filter(Boolean)
-    .join(" ")
-    .trim();
+    const buffer = Buffer.from(await audio.arrayBuffer());
+    const client = makeClient();
+    const encoding = encodingFromMimeType(audio.type);
+    const sampleRateHertz = sampleRateFromEncoding(encoding);
+    const [response] = await client.recognize({
+      audio: {
+        content: buffer.toString("base64")
+      },
+      config: {
+        encoding,
+        ...(sampleRateHertz ? { sampleRateHertz } : {}),
+        languageCode: "no-NO",
+        enableAutomaticPunctuation: true,
+        model: "latest_long"
+      }
+    });
 
-  if (!transcript) {
-    return Response.json({ error: "Google STT fant ingen tydelig tale i opptaket." }, { status: 422 });
+    const transcript = response.results
+      ?.map((result) => result.alternatives?.[0]?.transcript?.trim() ?? "")
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+
+    if (!transcript) {
+      return Response.json({ error: "Google STT fant ingen tydelig tale i opptaket." }, { status: 422 });
+    }
+
+    return Response.json({
+      transcript,
+      confidence: response.results?.[0]?.alternatives?.[0]?.confidence ?? null
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Ukjent feil fra Google STT.";
+    return Response.json({ error: `Google STT feilet: ${message}` }, { status: 500 });
   }
-
-  return Response.json({
-    transcript,
-    confidence: response.results?.[0]?.alternatives?.[0]?.confidence ?? null
-  });
 }
