@@ -49,7 +49,7 @@ export async function POST(request: Request) {
   });
 
   if (!response.audioContent) {
-    return Response.json({ error: "No audio returned" }, { status: 502 });
+    return Response.json({ error: "Ingen lyd ble returnert" }, { status: 502 });
   }
 
   return new Response(response.audioContent as BodyInit, {

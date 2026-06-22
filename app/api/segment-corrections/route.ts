@@ -46,7 +46,7 @@ async function writeCorrections(corrections: Record<string, SegmentCorrection>) 
 export async function POST(request: Request) {
   const payload = (await request.json()) as CorrectionRequest;
   if (!payload.id || !["save", "reset"].includes(payload.action)) {
-    return Response.json({ error: "Invalid correction request." }, { status: 400 });
+    return Response.json({ error: "Ugyldig korrigeringsforespørsel." }, { status: 400 });
   }
 
   const corrections = await readCorrections();
@@ -58,7 +58,7 @@ export async function POST(request: Request) {
   }
 
   const text = payload.text?.trim();
-  if (!text) return Response.json({ error: "Transcript text cannot be empty." }, { status: 400 });
+  if (!text) return Response.json({ error: "Transkripsjonsteksten kan ikke være tom." }, { status: 400 });
 
   const originalText = await readOriginalText(payload.id);
   const originalWordCount = wordCount(originalText);
@@ -66,7 +66,7 @@ export async function POST(request: Request) {
   if (originalWordCount >= 8 && proposedWordCount < Math.ceil(originalWordCount * 0.7)) {
     return Response.json(
       {
-        error: "Edited transcript is much shorter than the original. Save blocked to avoid accidentally replacing the full transcript with a fragment.",
+        error: "Den redigerte transkripsjonen er mye kortere enn originalen. Lagring er blokkert for å unngå at hele teksten erstattes med et utdrag.",
         originalWordCount,
         proposedWordCount
       },

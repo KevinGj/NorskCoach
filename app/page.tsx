@@ -124,10 +124,10 @@ const voices: VoiceOption[] = [
 
 const stages: SessionStage[] = [
   { id: "reference", title: "Referanse", minutes: 5 },
-  { id: "shadowing", title: "Shadowing", minutes: 5 },
+  { id: "shadowing", title: "Skygging", minutes: 5 },
   { id: "conversation", title: "Samtale", minutes: 5 },
   { id: "storytelling", title: "Fortelling", minutes: 3 },
-  { id: "feedback", title: "Coaching", minutes: 2 }
+  { id: "feedback", title: "Veiledning", minutes: 2 }
 ];
 
 const referenceParagraph =
@@ -135,7 +135,7 @@ const referenceParagraph =
 
 const fallbackAudioSegment: AudioSegment = {
   id: "sample-reference",
-  source: "Sample reference",
+  source: "Eksempelreferanse",
   audio: "",
   start: 0,
   end: 18,
@@ -750,30 +750,30 @@ function ExerciseAnalysisPanel({
   return (
     <div className="exerciseAnalysisCard">
       <div className="exerciseAnalysisHeader">
-        <p className="microLabel">Current exercise analysis</p>
+        <p className="microLabel">Analyse av gjeldende øvelse</p>
         <strong>{hasTranscript ? `${allUp}/5` : "--/5"}</strong>
       </div>
       <h3>
         {hasTranscript
           ? clarityScore >= 4
-            ? "Good clarity. Keep shaping rhythm and melody."
-            : "Clear enough to study. Focus the next pass."
-          : "Run analysis after speaking this segment."}
+            ? "God tydelighet. Fortsett å forme rytme og melodi."
+            : "Tydelig nok til å øve videre. Spiss neste forsøk."
+          : "Kjør analyse etter at du har lest inn dette segmentet."}
       </h3>
       <p>
         {hasTranscript
           ? issueWords.length
-            ? `Review STT/text around: ${issueWords.join(", ")}. Then repeat for steadier rhythm.`
-            : "Word pronunciation looks clear in the transcript. Next focus: consistent rhythm and sentence melody."
-          : "Record yourself, check the STT text, then press Analyser for this segment only."}
+            ? `Sjekk STT/tekst rundt: ${issueWords.join(", ")}. Les deretter på nytt med jevnere rytme.`
+            : "Orduttalen ser tydelig ut i transkripsjonen. Neste fokus: jevn rytme og setningsmelodi."
+          : "Ta opp stemmen din, sjekk STT-teksten, og trykk Analyser for dette segmentet."}
       </p>
       <div className="exerciseScores">
-        <ExerciseScoreRow label="Clarity" value={clarityScore} />
-        <ExerciseScoreRow label="Rhythm" value={rhythmScore} />
-        <ExerciseScoreRow label="Melody" value={melodyScore} />
+        <ExerciseScoreRow label="Tydelighet" value={clarityScore} />
+        <ExerciseScoreRow label="Rytme" value={rhythmScore} />
+        <ExerciseScoreRow label="Melodi" value={melodyScore} />
       </div>
       {!hasPitchTrace && (
-        <p className="analysisMessage">Melody score is provisional until learner pitch tracking is captured.</p>
+        <p className="analysisMessage">Melodipoeng er foreløpig til vi har fanget pitch-konturen fra stemmen din.</p>
       )}
     </div>
   );
@@ -907,7 +907,7 @@ function AudioStudyPanel({
           onPointerDown={(event) => event.stopPropagation()}
           type="button"
         >
-          {isPlaying ? "Pause" : "▶ Play"}
+          {isPlaying ? "Pause" : "▶ Spill"}
         </button>
         <div
           ref={timelineRef}
@@ -921,12 +921,12 @@ function AudioStudyPanel({
           }}
         >
         <div className="playhead" style={{ left: `${playheadPercent}%` }} />
-        <div className="waveform" aria-label="Waveform for valgt setning">
+        <div className="waveform" aria-label="Volumkurve for valgt setning">
           {columns.map((height, index) => (
             <span key={index} style={{ height: `${height}%` }} />
           ))}
         </div>
-        <div className="pitchOverlay" aria-label="Pitch overlay">
+        <div className="pitchOverlay" aria-label="Pitch-overlegg">
           {varianceZones.map((zone, index) => (
             <span
               className={`varianceZone ${zone.severity}`}
@@ -934,7 +934,7 @@ function AudioStudyPanel({
               style={{ left: `${zone.start}%`, width: `${zone.width}%` }}
             />
           ))}
-          <span className="laneLabel">Native</span>
+          <span className="laneLabel">Innfødt</span>
           <span className="pitchRangeLabel">{nativeHzLabel}</span>
           <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
             {nativePitchSegments.map((segment, index) => (
@@ -942,9 +942,9 @@ function AudioStudyPanel({
             ))}
             {studentPolyline && <polyline className="studentLine" points={studentPolyline} />}
           </svg>
-          <span className="studentHint">Student · {studentPolyline ? "aktiv kontur" : "venter på opptak"}</span>
+          <span className="studentHint">Elev · {studentPolyline ? "aktiv kontur" : "venter på opptak"}</span>
         </div>
-        <div className="spectrogram" aria-label="Learner-friendly spectrogram">
+        <div className="spectrogram" aria-label="Lærervennlig spektrogram">
           {spectralColumns.map((column, index) => (
             <div className="spectralColumn" key={index}>
               {column.map((intensity, freqIndex) => (
@@ -1793,7 +1793,7 @@ export default function Home() {
                 onToggleStudent={() => void toggleStudentPitch()}
               />
               <div className="sentencePractice listenSentencePractice">
-                <h3>{activeReferenceSegments.length > 1 ? "Practice sentence by sentence" : "Practice selected segment"}</h3>
+                <h3>{activeReferenceSegments.length > 1 ? "Øv setning for setning" : "Øv valgt segment"}</h3>
                 {activeReferenceSegments.map((segment, index) => (
                   <button
                     className={index === selectedSentence ? "sentence active" : "sentence"}
@@ -2000,7 +2000,7 @@ export default function Home() {
                   studentPitch={studentPitch}
                 />
                 <div className="sentencePractice">
-                  <h3>{activeReferenceSegments.length > 1 ? "Practice sentence by sentence" : "Practice selected segment"}</h3>
+                  <h3>{activeReferenceSegments.length > 1 ? "Øv setning for setning" : "Øv valgt segment"}</h3>
                   {activeReferenceSegments.map((segment, index) => (
                     <button
                       className={index === selectedSentence ? "sentence active" : "sentence"}
@@ -2032,9 +2032,9 @@ export default function Home() {
 
         <section className="coachSummaryBar">
           <button className="ghostButton" onClick={() => setShowCoachSummary((current) => !current)}>
-            {showCoachSummary ? "Skjul coach summary" : "Vis coach summary"}
+            {showCoachSummary ? "Skjul coach-oppsummering" : "Vis coach-oppsummering"}
           </button>
-          <span>Long-term profile, patterns, and broader coaching context.</span>
+          <span>Langsiktig profil, mønstre og bredere veiledning.</span>
         </section>
 
         {showCoachSummary && (
@@ -2082,9 +2082,9 @@ export default function Home() {
         <section className="coachVowelSummary">
           <div className="vowelChart good">
             <div>
-              <p className="microLabel">Experimental formant guide Â· F1/F2</p>
+              <p className="microLabel">Eksperimentell formantguide · F1/F2</p>
               <h3>Vokalplassering</h3>
-              <p>This is broad coach context until real learner formants are extracted from the recording.</p>
+              <p>Dette er bred veiledningskontekst til vi henter ekte formanter fra opptaket ditt.</p>
             </div>
             <div className="vowelGrid" aria-label="Forenklet vokalkart">
               {["i", "y", "u", "e", "Ã¸", "o", "Ã¦", "a", "Ã¥"].map((vowel, index) => (
