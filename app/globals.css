@@ -1287,6 +1287,11 @@ h1 em {
   line-height: 1.04;
 }
 
+.conversationPromptBox h2 {
+  font-size: clamp(1.45rem, 2vw, 2.2rem);
+  line-height: 1.18;
+}
+
 .conversationMeta {
   color: var(--accent);
   display: flex;
@@ -1296,6 +1301,12 @@ h1 em {
   gap: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.conversationControls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .conversationHistory {
