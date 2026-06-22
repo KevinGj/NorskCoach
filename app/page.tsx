@@ -18,6 +18,11 @@ type SessionEntry = {
   focus: string;
 };
 
+type ConversationTurn = {
+  speaker: "coach" | "user";
+  text: string;
+};
+
 type Segment = {
   sentence: string;
   start: number;
@@ -120,14 +125,6 @@ const shadowingLines = [
   "Kan du sende meg rapporten før lunsj?",
   "Vi tar det litt roligere i morgen."
 ];
-
-const conversationPrompts = [
-  "Hvordan har dagen din vært?",
-  "Hva har du jobbet med i det siste?",
-  "Hvordan går det med planene dine for sommeren?",
-  "Hva ville du anbefalt en ny nabo å gjøre først?"
-];
-
 const storytellingPrompts = [
   "Fortell om gården din i Nordland.",
   "Beskriv en fisketur du husker godt.",
@@ -146,6 +143,19 @@ const emptyScores: Scores = {
   rhythm: 0,
   fluency: 0
 };
+
+function makeConversationOpening(referenceText: string) {
+  const firstSentence = splitSentenceText(referenceText)[0] ?? referenceText;
+  const preview = firstSentence.length > 140 ? `${firstSentence.slice(0, 140)}...` : firstSentence;
+  return `La oss snakke om teksten. Hva skjer i denne delen: "${preview}"?`;
+}
+
+function formatConversationTime(seconds: number) {
+  const safeSeconds = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainder = safeSeconds % 60;
+  return `${minutes}:${String(remainder).padStart(2, "0")}`;
+}
 
 function todayKey() {
   return new Date().toISOString().slice(0, 10);
@@ -1031,6 +1041,10 @@ export default function Home() {
   const [userRecordingUrl, setUserRecordingUrl] = useState("");
   const [isUserPlaybackPlaying, setIsUserPlaybackPlaying] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [conversationTurns, setConversationTurns] = useState<ConversationTurn[]>([]);
+  const [conversationStartedAt, setConversationStartedAt] = useState<number | null>(null);
+  const [conversationElapsed, setConversationElapsed] = useState(0);
+  const [isConversationThinking, setIsConversationThinking] = useState(false);
   const [feedback, setFeedback] = useState<CoachFeedback | null>(null);
   const [analysisMessage, setAnalysisMessage] = useState("");
   const [showCoachSummary, setShowCoachSummary] = useState(false);
@@ -1088,10 +1102,10 @@ export default function Home() {
   const prompt = useMemo(() => {
     if (stage.id === "reference") return selectedAudioSegment.text;
     if (stage.id === "shadowing") return shadowingLines[entries.length % shadowingLines.length];
-    if (stage.id === "conversation") return conversationPrompts[entries.length % conversationPrompts.length];
+    if (stage.id === "conversation") return conversationTurns.filter((turn) => turn.speaker === "coach").at(-1)?.text ?? makeConversationOpening(selectedAudioSegment.text);
     if (stage.id === "storytelling") return storytellingPrompts[entries.length % storytellingPrompts.length];
     return feedback?.focus ?? "Fullfør økten for å få coaching.";
-  }, [entries.length, feedback?.focus, selectedAudioSegment.text, stage.id]);
+  }, [conversationTurns, entries.length, feedback?.focus, selectedAudioSegment.text, stage.id]);
   const averages = averageScores(entries);
   const totalMinutes = entries.reduce((sum, entry) => sum + entry.minutes, 0);
   const activeScores = feedback?.scores ?? averages;
@@ -1215,6 +1229,21 @@ export default function Home() {
   }, [selectedAudioSegment.id, selectedAudioSegment.text]);
 
   useEffect(() => {
+    if (stage.id !== "conversation") return;
+    setConversationTurns([{ speaker: "coach", text: makeConversationOpening(selectedAudioSegment.text) }]);
+    setConversationStartedAt(Date.now());
+    setConversationElapsed(0);
+  }, [selectedAudioSegment.id, selectedAudioSegment.text, stage.id]);
+
+  useEffect(() => {
+    if (stage.id !== "conversation" || !conversationStartedAt) return;
+    const interval = window.setInterval(() => {
+      setConversationElapsed((Date.now() - conversationStartedAt) / 1000);
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [conversationStartedAt, stage.id]);
+
+  useEffect(() => {
     setSelectedSentence(0);
     setReferenceTime(0);
     setStudentPitch([]);
@@ -1269,6 +1298,10 @@ export default function Home() {
       }
       transcriptRef.current = payload.transcript;
       setTranscript(payload.transcript);
+      if (stage.id === "conversation") {
+        void handleConversationTurn(payload.transcript);
+        return;
+      }
       setAnalysisMessage("Transkripsjon klar. Kjører analyse...");
       void runCoachAnalysis(payload.transcript);
     } catch (error) {
@@ -1594,7 +1627,7 @@ export default function Home() {
   shortcutActionsRef.current = {
     toggleListening,
     toggleNarration,
-    canRecord: stage.id !== "feedback" && !isTranscribing
+    canRecord: stage.id !== "feedback" && !isTranscribing && !isConversationThinking
   };
 
   useEffect(() => {
@@ -1640,6 +1673,43 @@ export default function Home() {
     userRecordingUrlRef.current = null;
     setUserRecordingUrl("");
   };
+
+  const resetConversation = () => {
+    setConversationTurns([]);
+    setConversationStartedAt(null);
+    setConversationElapsed(0);
+    setIsConversationThinking(false);
+  };
+
+  async function handleConversationTurn(userText: string) {
+    const userTurn: ConversationTurn = { speaker: "user", text: userText };
+    const nextTurns = [...conversationTurns, userTurn];
+    setConversationTurns(nextTurns);
+    setIsConversationThinking(true);
+    setAnalysisMessage("Coach tenker ut neste spørsmål...");
+
+    try {
+      const response = await fetch("/api/conversation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          referenceText: selectedAudioSegment.text,
+          userText,
+          elapsedSeconds: conversationElapsed,
+          turns: nextTurns
+        })
+      });
+      const payload = (await response.json()) as { reply?: string };
+      const reply = payload.reply?.trim() || "Kan du si litt mer om det?";
+      setConversationTurns([...nextTurns, { speaker: "coach", text: reply }]);
+      setAnalysisMessage("Neste spørsmål er klart.");
+      void runCoachAnalysis(nextTurns.filter((turn) => turn.speaker === "user").map((turn) => turn.text).join(" "));
+    } catch {
+      setAnalysisMessage("Kunne ikke hente neste samtalespørsmål akkurat nå.");
+    } finally {
+      setIsConversationThinking(false);
+    }
+  }
 
   async function runCoachAnalysis(transcriptText: string) {
     if (stage.id === "feedback") return;
@@ -1709,6 +1779,18 @@ export default function Home() {
     setTranscript("");
     setFeedback(null);
     setAnalysisMessage("");
+    resetConversation();
+    clearUserRecording();
+    stopAudio();
+    stopStudentPitch();
+  };
+
+  const selectStage = (index: number) => {
+    setStageIndex(index);
+    setTranscript("");
+    setFeedback(null);
+    setAnalysisMessage("");
+    resetConversation();
     clearUserRecording();
     stopAudio();
     stopStudentPitch();
@@ -1727,6 +1809,7 @@ export default function Home() {
     setTranscript("");
     setFeedback(null);
     setAnalysisMessage("");
+    resetConversation();
     clearUserRecording();
   };
 
@@ -1774,7 +1857,7 @@ export default function Home() {
             <button
               className={index === stageIndex ? "stageStep active" : "stageStep"}
               key={item.id}
-              onClick={() => setStageIndex(index)}
+              onClick={() => selectStage(index)}
             >
               <span>{String(index + 1).padStart(2, "0")} &nbsp;{item.minutes} min</span>
               <strong>{item.title}</strong>
@@ -1874,14 +1957,29 @@ export default function Home() {
             ) : (
               <div className="promptBox">
                 <p className="microLabel">Coach sier</p>
+                {stage.id === "conversation" && (
+                  <div className="conversationMeta">
+                    <span>{formatConversationTime(conversationElapsed)} / 5:00</span>
+                    <span>{conversationTurns.filter((turn) => turn.speaker === "user").length} svar</span>
+                  </div>
+                )}
                 <h2>{prompt}</h2>
+                {stage.id === "conversation" && (
+                  <div className="conversationHistory" aria-label="Samtalehistorikk">
+                    {conversationTurns.map((turn, index) => (
+                      <p className={turn.speaker === "coach" ? "coachTurn" : "userTurn"} key={`${turn.speaker}-${index}`}>
+                        <strong>{turn.speaker === "coach" ? "Coach" : "Du"}:</strong> {turn.text}
+                      </p>
+                    ))}
+                  </div>
+                )}
                 {stage.id !== "feedback" && (
                   <div className="practiceInput inlinePractice">
                     <div className="practiceActions">
-                      <button className={isListening ? "recording primary" : "primary"} onClick={toggleListening} disabled={isTranscribing}>
-                        {isListening ? "Stopp opptak" : isTranscribing ? "Transkriberer..." : "Start tale"}
+                      <button className={isListening ? "recording primary" : "primary"} onClick={toggleListening} disabled={isTranscribing || isConversationThinking}>
+                        {isListening ? "Stopp opptak" : isTranscribing ? "Transkriberer..." : isConversationThinking ? "Coach tenker..." : "Start tale"}
                       </button>
-                      <button className="ghostButton" onClick={analyze} disabled={isLoading || isTranscribing}>
+                      <button className="ghostButton" onClick={analyze} disabled={isLoading || isTranscribing || isConversationThinking}>
                         {isLoading ? "Analyserer..." : "Analyser"}
                       </button>
                       <button className="ghostButton" onClick={playUserRecording} disabled={!userRecordingUrl}>
@@ -2032,10 +2130,10 @@ export default function Home() {
                 </div>
                 <div className="practiceInput">
                   <div className="practiceActions">
-                    <button className={isListening ? "recording primary" : "primary"} onClick={toggleListening} disabled={isTranscribing}>
-                      {isListening ? "Stopp opptak" : isTranscribing ? "Transkriberer..." : "Start tale"}
+                    <button className={isListening ? "recording primary" : "primary"} onClick={toggleListening} disabled={isTranscribing || isConversationThinking}>
+                      {isListening ? "Stopp opptak" : isTranscribing ? "Transkriberer..." : isConversationThinking ? "Coach tenker..." : "Start tale"}
                     </button>
-                    <button className="ghostButton" onClick={analyze} disabled={isLoading || isTranscribing}>
+                    <button className="ghostButton" onClick={analyze} disabled={isLoading || isTranscribing || isConversationThinking}>
                       {isLoading ? "Analyserer..." : "Analyser"}
                     </button>
                     <button className="ghostButton" onClick={playUserRecording} disabled={!userRecordingUrl}>
