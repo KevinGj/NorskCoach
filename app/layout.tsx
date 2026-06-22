@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Norsk Coach",
-  description: "A daily Norwegian speech coach for pronunciation, rhythm, and fluency."
+  description: "En daglig norsk taletrener for uttale, rytme og flyt."
 };
 
 export default function RootLayout({

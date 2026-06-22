@@ -31,7 +31,7 @@ export async function POST(request: Request) {
   const { text, voice = "nb-NO-Chirp3-HD-Aoede", speakingRate = 0.94 } = (await request.json()) as SpeechRequest;
 
   if (!text?.trim()) {
-    return Response.json({ error: "Missing text" }, { status: 400 });
+    return Response.json({ error: "Mangler tekst" }, { status: 400 });
   }
 
   const client = makeClient();

@@ -18,30 +18,6 @@ type SessionEntry = {
   focus: string;
 };
 
-type SpeechRecognitionConstructor = new () => SpeechRecognition;
-
-type SpeechRecognition = {
-  lang: string;
-  continuous: boolean;
-  interimResults: boolean;
-  start: () => void;
-  stop: () => void;
-  onresult: ((event: SpeechRecognitionEvent) => void) | null;
-  onend: (() => void) | null;
-  onerror: ((event: { error: string }) => void) | null;
-};
-
-type SpeechRecognitionEvent = {
-  results: {
-    length: number;
-    [index: number]: {
-      [index: number]: {
-        transcript: string;
-      };
-    };
-  };
-};
-
 type Segment = {
   sentence: string;
   start: number;
@@ -105,13 +81,6 @@ type VarianceZone = {
   width: number;
   severity: Exclude<Severity, "good">;
 };
-
-declare global {
-  interface Window {
-    webkitSpeechRecognition?: SpeechRecognitionConstructor;
-    SpeechRecognition?: SpeechRecognitionConstructor;
-  }
-}
 
 const voices: VoiceOption[] = [
   { name: "nb-NO-Chirp3-HD-Aoede", label: "Aoede" },
@@ -1061,6 +1030,7 @@ export default function Home() {
   const [transcript, setTranscript] = useState("");
   const [userRecordingUrl, setUserRecordingUrl] = useState("");
   const [isUserPlaybackPlaying, setIsUserPlaybackPlaying] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const [feedback, setFeedback] = useState<CoachFeedback | null>(null);
   const [analysisMessage, setAnalysisMessage] = useState("");
   const [showCoachSummary, setShowCoachSummary] = useState(false);
@@ -1068,9 +1038,6 @@ export default function Home() {
   const [entries, setEntries] = useState<SessionEntry[]>([]);
   const [isListening, setIsListening] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
-  const speechCaptureActiveRef = useRef(false);
-  const speechRestartTimerRef = useRef<number | null>(null);
   const transcriptRef = useRef("");
   const shortcutActionsRef = useRef<{
     toggleListening: () => void | Promise<void>;
@@ -1257,8 +1224,6 @@ export default function Home() {
 
   useEffect(() => {
     return () => {
-      speechCaptureActiveRef.current = false;
-      if (speechRestartTimerRef.current) window.clearTimeout(speechRestartTimerRef.current);
       audioRef.current?.pause();
       userAudioRef.current?.pause();
       if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
@@ -1280,29 +1245,37 @@ export default function Home() {
   };
 
   const stopSpeechCapture = () => {
-    speechCaptureActiveRef.current = false;
-    if (speechRestartTimerRef.current) {
-      window.clearTimeout(speechRestartTimerRef.current);
-      speechRestartTimerRef.current = null;
-    }
-    const recognition = recognitionRef.current;
-    recognitionRef.current = null;
-    if (recognition) {
-      recognition.onend = null;
-      recognition.onerror = null;
-      recognition.onresult = null;
-    }
-    try {
-      recognition?.stop();
-    } catch {
-      // Recognition can already be ended by the browser.
-    }
     if (speechRecorderRef.current?.state === "recording") {
       speechRecorderRef.current.stop();
     }
     speechStreamRef.current?.getTracks().forEach((track) => track.stop());
     speechStreamRef.current = null;
     setIsListening(false);
+  };
+
+  const transcribeUserRecording = async (blob: Blob) => {
+    setIsTranscribing(true);
+    setAnalysisMessage("Opptak lagret. Transkriberer med Google STT...");
+    try {
+      const formData = new FormData();
+      formData.append("audio", blob, `opptak.${blob.type.includes("ogg") ? "ogg" : "webm"}`);
+      const response = await fetch("/api/transcribe", {
+        method: "POST",
+        body: formData
+      });
+      const payload = (await response.json().catch(() => null)) as { transcript?: string; error?: string } | null;
+      if (!response.ok || !payload?.transcript) {
+        throw new Error(payload?.error ?? "Transkripsjonen feilet.");
+      }
+      transcriptRef.current = payload.transcript;
+      setTranscript(payload.transcript);
+      setAnalysisMessage("Transkripsjon klar. Kjører analyse...");
+      void runCoachAnalysis(payload.transcript);
+    } catch (error) {
+      setAnalysisMessage(error instanceof Error ? error.message : "Transkripsjonen feilet, men opptaket er lagret for avspilling.");
+    } finally {
+      setIsTranscribing(false);
+    }
   };
 
   const startSpeechRecording = async () => {
@@ -1331,6 +1304,7 @@ export default function Home() {
         const url = URL.createObjectURL(blob);
         userRecordingUrlRef.current = url;
         setUserRecordingUrl(url);
+        void transcribeUserRecording(blob);
       }
       speechStreamRef.current?.getTracks().forEach((track) => track.stop());
       speechStreamRef.current = null;
@@ -1587,43 +1561,6 @@ export default function Home() {
     void playGoogleSpeech(prompt, stage.id === "shadowing" ? 0.9 : 0.96);
   };
 
-  const startSpeechRecognition = (Recognition: SpeechRecognitionConstructor) => {
-    if (!speechCaptureActiveRef.current) return;
-
-    const recognition = new Recognition();
-    const baseTranscript = transcriptRef.current.trim();
-    recognition.lang = "nb-NO";
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.onresult = (event) => {
-      let text = "";
-      for (let index = 0; index < event.results.length; index += 1) {
-        text += event.results[index][0].transcript;
-      }
-      const nextTranscript = [baseTranscript, text.trim()].filter(Boolean).join(" ");
-      transcriptRef.current = nextTranscript;
-      setTranscript(nextTranscript);
-    };
-    recognition.onerror = (event) => {
-      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
-        setAnalysisMessage("Mikrofontilgang eller talegjenkjenning ble blokkert.");
-        stopSpeechCapture();
-      }
-    };
-    recognition.onend = () => {
-      recognitionRef.current = null;
-      if (!speechCaptureActiveRef.current) return;
-      speechRestartTimerRef.current = window.setTimeout(() => startSpeechRecognition(Recognition), 250);
-    };
-    recognitionRef.current = recognition;
-
-    try {
-      recognition.start();
-    } catch {
-      setAnalysisMessage("STT stoppet, men opptaket fortsetter. Du kan prøve igjen eller skrive teksten manuelt.");
-    }
-  };
-
   const toggleListening = async () => {
     setAnalysisMessage("");
     if (isListening) {
@@ -1638,14 +1575,8 @@ export default function Home() {
       return;
     }
 
-    const Recognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
-    speechCaptureActiveRef.current = true;
     setIsListening(true);
-    if (Recognition) {
-      startSpeechRecognition(Recognition);
-    } else {
-      setAnalysisMessage("Nettleseren støtter ikke STT her, men opptaket lagres for avspilling.");
-    }
+    setAnalysisMessage("Opptak pågår. Trykk Stopp opptak for å transkribere.");
   };
 
   const toggleNarration = () => {
@@ -1663,7 +1594,7 @@ export default function Home() {
   shortcutActionsRef.current = {
     toggleListening,
     toggleNarration,
-    canRecord: stage.id !== "feedback"
+    canRecord: stage.id !== "feedback" && !isTranscribing
   };
 
   useEffect(() => {
@@ -1709,10 +1640,42 @@ export default function Home() {
     userRecordingUrlRef.current = null;
     setUserRecordingUrl("");
   };
+
+  async function runCoachAnalysis(transcriptText: string) {
+    if (stage.id === "feedback") return;
+    setIsLoading(true);
+    setAnalysisMessage("");
+    try {
+      const response = await fetch("/api/coach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: stage.id === "reference" ? "shadowing" : stage.id,
+          transcript: transcriptText,
+          prompt: stage.id === "reference" ? selectedAudioSegment.text : prompt,
+          profile
+        })
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const result = (await response.json()) as CoachFeedback;
+      setFeedback(result);
+      setProfile(result.profile);
+      setAnalysisMessage("Analyse klar. Se fokusområder og coach-feedback under.");
+    } catch {
+      setAnalysisMessage("Kunne ikke kjøre analysen akkurat nå.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   const analyze = async () => {
     if (stage.id === "feedback") return;
+    if (isTranscribing) {
+      setAnalysisMessage("Venter på Google-transkripsjonen før analyse.");
+      return;
+    }
     if (!transcript.trim()) {
-      setAnalysisMessage("Start tale først, eller skriv/lim inn en STT-transkripsjon.");
+      setAnalysisMessage("Start tale først, vent på transkripsjonen, eller skriv/lim inn tekst manuelt.");
       return;
     }
     setIsLoading(true);
@@ -1915,10 +1878,10 @@ export default function Home() {
                 {stage.id !== "feedback" && (
                   <div className="practiceInput inlinePractice">
                     <div className="practiceActions">
-                      <button className={isListening ? "recording primary" : "primary"} onClick={toggleListening}>
-                        {isListening ? "Stopp opptak" : "Start tale"}
+                      <button className={isListening ? "recording primary" : "primary"} onClick={toggleListening} disabled={isTranscribing}>
+                        {isListening ? "Stopp opptak" : isTranscribing ? "Transkriberer..." : "Start tale"}
                       </button>
-                      <button className="ghostButton" onClick={analyze} disabled={isLoading}>
+                      <button className="ghostButton" onClick={analyze} disabled={isLoading || isTranscribing}>
                         {isLoading ? "Analyserer..." : "Analyser"}
                       </button>
                       <button className="ghostButton" onClick={playUserRecording} disabled={!userRecordingUrl}>
@@ -1929,7 +1892,7 @@ export default function Home() {
                       aria-label="Transkripsjon"
                       value={transcript}
                       onChange={(event) => setTranscript(event.target.value)}
-                      placeholder="STT-transkripsjonen vises her. Den kan inneholde feil i ord og tegnsetting."
+                      placeholder="Google-transkripsjonen vises her etter opptak. Du kan rette tekst manuelt før analyse."
                       rows={4}
                     />
                     {analysisMessage && <p className="analysisMessage">{analysisMessage}</p>}
@@ -2069,10 +2032,10 @@ export default function Home() {
                 </div>
                 <div className="practiceInput">
                   <div className="practiceActions">
-                    <button className={isListening ? "recording primary" : "primary"} onClick={toggleListening}>
-                      {isListening ? "Stopp opptak" : "Start tale"}
+                    <button className={isListening ? "recording primary" : "primary"} onClick={toggleListening} disabled={isTranscribing}>
+                      {isListening ? "Stopp opptak" : isTranscribing ? "Transkriberer..." : "Start tale"}
                     </button>
-                    <button className="ghostButton" onClick={analyze} disabled={isLoading}>
+                    <button className="ghostButton" onClick={analyze} disabled={isLoading || isTranscribing}>
                       {isLoading ? "Analyserer..." : "Analyser"}
                     </button>
                     <button className="ghostButton" onClick={playUserRecording} disabled={!userRecordingUrl}>
@@ -2083,7 +2046,7 @@ export default function Home() {
                     aria-label="Transkripsjon"
                     value={transcript}
                     onChange={(event) => setTranscript(event.target.value)}
-                    placeholder="STT-transkripsjonen vises her. Den kan inneholde feil i ord og tegnsetting."
+                    placeholder="Google-transkripsjonen vises her etter opptak. Du kan rette tekst manuelt før analyse."
                     rows={4}
                   />
                   {analysisMessage && <p className="analysisMessage">{analysisMessage}</p>}
