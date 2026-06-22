@@ -1311,6 +1311,19 @@ export default function Home() {
     }
   };
 
+  const analyzeUserRecording = async (blob: Blob) => {
+    try {
+      const context = analysisContextRef.current ?? new AudioContext();
+      analysisContextRef.current = context;
+      const decodedAudio = await context.decodeAudioData(await blob.arrayBuffer());
+      const analysis = analyzeAudioBuffer(decodedAudio);
+      setStudentPitch(resamplePitch(analysis.pitch, 180, []));
+    } catch {
+      setStudentPitch([]);
+      setAnalysisMessage("Opptaket er lagret, men pitch-konturen kunne ikke analyseres i nettleseren.");
+    }
+  };
+
   const startSpeechRecording = async () => {
     if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
       setAnalysisMessage("Nettleseren kan ikke ta opp lyd her. STT kan fortsatt fungere.");
@@ -1325,6 +1338,7 @@ export default function Home() {
     userRecordingUrlRef.current = null;
     setUserRecordingUrl("");
     setIsUserPlaybackPlaying(false);
+    setStudentPitch([]);
 
     const recorder = new MediaRecorder(stream);
     speechRecorderRef.current = recorder;
@@ -1337,6 +1351,7 @@ export default function Home() {
         const url = URL.createObjectURL(blob);
         userRecordingUrlRef.current = url;
         setUserRecordingUrl(url);
+        void analyzeUserRecording(blob);
         void transcribeUserRecording(blob);
       }
       speechStreamRef.current?.getTracks().forEach((track) => track.stop());
@@ -1672,6 +1687,7 @@ export default function Home() {
     if (userRecordingUrlRef.current) URL.revokeObjectURL(userRecordingUrlRef.current);
     userRecordingUrlRef.current = null;
     setUserRecordingUrl("");
+    setStudentPitch([]);
   };
 
   const resetConversation = () => {
