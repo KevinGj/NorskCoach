@@ -46,10 +46,9 @@ export async function POST(request: Request) {
     },
     config: {
       encoding: encodingFromMimeType(audio.type),
-      languageCode: "nb-NO",
-      alternativeLanguageCodes: ["nn-NO"],
+      languageCode: "no-NO",
       enableAutomaticPunctuation: true,
-      model: "latest_long"
+      model: "long"
     }
   });
 
